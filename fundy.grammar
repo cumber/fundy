@@ -1,0 +1,66 @@
+
+# ignore whitespace or continuation
+IGNORE:     "[ \t]+|\\\n";
+
+NUMBER:     "[0-9]+";
+IDENT:      "[a-zA-Z_0-9+\-*/=!@$%\^&\|]+";
+STRING:     "\"([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}'\;:,.<>/\?`~]|\\\"|\\n|\\t|\\b|\\v|\\0|\\\\)*\"";
+CHAR:       "'([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}\"\;:,.<>/\?`~]|\\'|\\n|\\t|\\b|\\v|\\0|\\\\)'";
+LINEBREAK:  "\n[ \t\n]*";
+
+
+program:    [LINEBREAK]? (statement [LINEBREAK])* statement? [EOF] ;
+
+statement:  <print_statement>
+    |       <def_statement>
+    ;
+
+print_statement:    ["print"] expr ;
+
+def_statement:      ["def"] IDENT paramlist type_decl? ;
+
+paramlist:  ["("] param  ( [","] param)* [")"] ;
+
+param:  IDENT type_decl? ;
+
+type_decl:          ["::"] "type" ;
+
+
+
+expr:   >chain< ;
+
+term:   <IDENT>
+    |   <literal>
+    |   <paren>
+    ;
+
+paren:  "(" <expr> ")" ;
+
+chain:  term+;
+
+call:   term arglist+ ;
+
+arglist:    ["{"] arg ( [","] arg)* ["}"] ;
+
+arg:    <expr>;
+
+literal:    <NUMBER>
+    |       <list>
+    |       <tuple>
+    |       <STRING>
+    |       <CHAR>
+    ;
+
+list:   [ "[" ] ( expr ( [","] expr )* tail? )? [ "]" ] ;
+
+tail:   [ ":" ] expr ;
+
+tuple:  ["("] ( maybe_expr ( [","] maybe_expr )+ )? [")"]
+    |   ["("] maybe_expr [","] [")"]
+    ;
+
+maybe_expr: <expr>
+    |       <missing>
+    ;
+
+missing:    ["?"] ;
