@@ -1,0 +1,8 @@
+
+x * y       ::      int -> int -> int       -->     x * y
+x / y       ::      int -> int -> int       -->     x // y
+
+
+
+x + y       ::      int -> int -> int       -->     x + y
+x - y       ::      int -> int -> int       -->     x - y

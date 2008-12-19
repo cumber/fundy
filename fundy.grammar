@@ -11,13 +11,27 @@ LINEBREAK:  "\n[ \t\n]*";
 
 program:    [LINEBREAK]? (statement [LINEBREAK])* statement? [EOF] ;
 
-statement:  <print_statement>
-    |       <def_statement>
+statement:  <io_statement>
+    |       <bind_statement>
     ;
+
+# statements that do IO, and therefore cannot be allowed inside a function
+io_statement:   <print_statement> ;
 
 print_statement:    ["print"] expr ;
 
-def_statement:      ["def"] IDENT paramlist type_decl? ;
+# statements that bind names, which can be allowed inside a function
+bind_statement:     <def_statement>
+    |               <assign_statement>
+    ;
+
+assign_statement:     IDENT ["="] expr [LINEBREAK] ;
+
+# the def statement defines a function and binds it to a name
+def_statement:      ["def"] IDENT paramlist type_decl? [LINEBREAK]
+                    block [LINEBREAK] ;
+
+block:      bind_statement* ["return"] expr ;
 
 paramlist:  ["("] param  ( [","] param)* [")"] ;
 

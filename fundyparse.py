@@ -3,6 +3,7 @@ from pypy.rlib.parsing.parsing import PackratParser, ParseError
 from pypy.rlib.parsing.lexer import Lexer, Token, SourcePos
 
 import py
+import sys
 
 
 grammarfile = py.magic.autopath().dirpath().join('fundy.grammar')
@@ -12,7 +13,7 @@ try:
     regexes, rules, ToAST = parse_ebnf(grammar)
 except ParseError, e:
     print e.nice_error_message(filename=str(grammarfile), source=grammar)
-    raise
+    sys.exit(1)
 
 # similar to ebnfparse.make_parse_function, but accepts a function to
 # run the lexer's token stream through before passing it to the parser,
