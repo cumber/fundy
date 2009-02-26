@@ -7,6 +7,7 @@ IDENT:      "[a-zA-Z_0-9+\-*/=!@$%\^&\|]+";
 STRING:     "\"([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}'\;:,.<>/\?`~]|\\\"|\\n|\\t|\\b|\\v|\\0|\\\\)*\"";
 CHAR:       "'([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}\"\;:,.<>/\?`~]|\\'|\\n|\\t|\\b|\\v|\\0|\\\\)'";
 LINEBREAK:  "\n[ \t\n]*";
+MISSING:    "\?[a-zA-Z_0-9+\-*/=!@$%\&\|\?]+";
 
 
 program:    [LINEBREAK]? (statement [LINEBREAK])* statement? [EOF] ;
@@ -16,9 +17,13 @@ statement:  <io_statement>
     ;
 
 # statements that do IO, and therefore cannot be allowed inside a function
-io_statement:   <print_statement> ;
+io_statement:   <print_statement>
+    |           <show_statement>
+    ;
 
-print_statement:    ["print"] expr ;
+print_statement:    ["print"]? expr [LINEBREAK] ;
+
+show_statement:     ["show"] expr [LINEBREAK] ;
 
 # statements that bind names, which can be allowed inside a function
 bind_statement:     <def_statement>
@@ -28,12 +33,10 @@ bind_statement:     <def_statement>
 assign_statement:     IDENT ["="] expr [LINEBREAK] ;
 
 # the def statement defines a function and binds it to a name
-def_statement:      ["def"] IDENT paramlist type_decl? [LINEBREAK]
+def_statement:      ["def"] IDENT param* type_decl? [LINEBREAK]
                     block [LINEBREAK] ;
 
 block:      bind_statement* ["return"] expr ;
-
-paramlist:  ["("] param  ( [","] param)* [")"] ;
 
 param:  IDENT type_decl? ;
 
@@ -44,6 +47,7 @@ type_decl:          ["::"] "type" ;
 expr:   >chain< ;
 
 term:   <IDENT>
+    |   <MISSING>
     |   <literal>
     |   <paren>
     ;
@@ -51,12 +55,6 @@ term:   <IDENT>
 paren:  "(" <expr> ")" ;
 
 chain:  term+;
-
-call:   term arglist+ ;
-
-arglist:    ["{"] arg ( [","] arg)* ["}"] ;
-
-arg:    <expr>;
 
 literal:    <NUMBER>
     |       <list>
@@ -69,12 +67,6 @@ list:   [ "[" ] ( expr ( [","] expr )* tail? )? [ "]" ] ;
 
 tail:   [ ":" ] expr ;
 
-tuple:  ["("] ( maybe_expr ( [","] maybe_expr )+ )? [")"]
-    |   ["("] maybe_expr [","] [")"]
+tuple:  ["{"] ( expr ( [","] expr )+ )? ["}"]
+    |   ["{"] expr [","] ["}"]
     ;
-
-maybe_expr: <expr>
-    |       <missing>
-    ;
-
-missing:    ["?"] ;

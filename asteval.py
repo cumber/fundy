@@ -1,6 +1,7 @@
 
+
 from pypy.rlib.parsing.tree import RPythonVisitor
-from pypy.lang.fundy.graph import Value, Application, Lambda, ASSOC
+from pypy.lang.fundy.graph import Value, Application, Lambda, Param, ASSOC
 from pypy.lang.fundy.builtin import default_context
 
 
@@ -33,36 +34,50 @@ class Eval(RPythonVisitor):
             # graph should now be a value node
             print graph.value.to_string()
     
+    def visit_show_statement(self, node):
+        for n in node.children:
+            graph = self.dispatch(n)
+            graph.view()
+    
     def visit_def_statement(self, node):
-        if node.children[2].symbol == 'type_decl':
-            ident, paramlist, type_decl, block = node.children
+        ident = node.children[0]
+        
+        n = 1
+        params = []
+        while node.children[n].symbol == 'param':
+            params.append(node.children[n])
+            n += 1
+        
+        if node.children[n].symbol == 'type_decl':
+            type_decl, block = node.children[n:]
         else:
-            ident, paramlist, block = node.children
+            block = node.children[n]
             type_decl = None
             
-        if paramlist.children:
+        if params:
             sub_eval = Eval(self.context)
-            base_lambda = sub_eval.dispatch(paramlist)
-            tail_lambda = base_lambda
-            while tail_lambda.body is not None:
-                tail_lambda = tail_lambda.body
-            tail_lambda.body = sub_eval.dispatch(block)
-            self.context[ident.additional_info] = base_lambda
+            param_nodes = [sub_eval.dispatch(p) for p in params]
+            body = sub_eval.dispatch(block)
+            
+            # build the lambda nodes in reverse order, as each contains the next
+            param_nodes.reverse()
+            for param in param_nodes:
+                body = Lambda(param, body)
+            
+            # now body is the top level lambda node
+            self.context[ident.additional_info] = body
         else:
             # no parameters, so we don't need a lambda node at all, just bind
             # the name to the expression returned by evaluating the body
             self.context[ident.additional_info] = self.dispatch(block) 
     
     def visit_paramlist(self, node):
-        base_lambda = self.dispatch(node.children[0])
-        for n in node.children[1:]:
-            base_lambda.body = self.dispatch(n)
-        return base_lambda
+        return [self.dispatch(n) for n in node.children]
     
     def visit_param(self, node):
-        new_lambda = Lambda()
-        self.context[node.children[0].additional_info] = new_lambda
-        return new_lambda
+        new_param = Param()
+        self.context[node.children[0].additional_info] = new_param
+        return new_param
     
     def visit_block(self, node):
         # last item is the expression to be returned, any other items

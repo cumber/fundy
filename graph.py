@@ -1,5 +1,8 @@
 
+import py
+
 from pypy.lang.fundy.utils import Enum
+
 
 
 # define type code enums
@@ -37,7 +40,7 @@ class W_String(object):
         return self.strval
 
     def to_repr(self):
-        return repr(self.str_value)
+        return repr(self.strval)
 
 class W_Char(W_String):
     """
@@ -64,19 +67,20 @@ class ReductionError(Exception):
 
 
 # constants for the Node tags
-TAG = Enum('VALUE', 'BUILTIN', 'LAMBDA', 'APPLICATION')
+TAG = Enum('VALUE', 'BUILTIN', 'LAMBDA', 'PARAMETER', 'APPLICATION')
 
 # constants for associativity
 ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
 
 class Node(object):
     def __init__(self, tag, functor=None, argument=None, body=None,
-                 value=None, type_info=None, code=None,
+                 value=None, type_info=None, code=None, param=None,
                  assoc=ASSOC.NONE, prec=0, num_params=None, args=[]):
         self.tag = tag
         self.functor = functor
         self.argument = argument
         self.body = body
+        self.param = param
         self.value = value
         self.type_info = type_info
         self.code = code
@@ -84,32 +88,77 @@ class Node(object):
         self.prec = prec
         self.num_params = num_params
         self.args = args
+    
+    def view(self):
+        from dotviewer import graphclient
+        content = ["digraph G{"]
+        content.extend(self.dot())
+        content.append("}")
+        p = py.test.ensuretemp("automaton").join("temp.dot")
+        p.write("\n".join(content))
+        graphclient.display_dot_file(str(p))
 
-    def __repr__(self, seen_lambdas=[]):
+    def dot(self, seen_params=None):
+        if self.tag is TAG.VALUE:
+            yield '"%s" [shape=box, label="%s\\n%s"];' % (id(self), self.tag,
+                                                         self.value.to_repr())
+        
+        elif self.tag is TAG.BUILTIN:
+            yield '"%s" [shape=box, label="%s"];' % (id(self),
+                                                     self.code.func_name)
+            for arg in self.args:
+                yield '"%s" -> "%s" [color=green, label="a"];' % (id(self), id(arg))
+                for line in arg.dot():
+                    yield line
+            
+        elif self.tag is TAG.LAMBDA:
+            yield '"%s" [shape=octagon, label="%s"];' % (id(self), self.tag)
+            yield '"%s" -> "%s" [color=yellow, label="P"];' % (id(self), id(self.param))
+            for line in self.param.dot():
+                yield line
+            yield '"%s" -> "%s" [color=red];' % (id(self), id(self.body))
+            for line in self.body.dot():
+                yield line
+            
+        elif self.tag is TAG.PARAMETER:
+            yield '"%s" [shape=octagon, label="%s"];' % (id(self), self.tag)
+        
+        elif self.tag is TAG.APPLICATION:
+            yield '"%s" [shape=ellipse, label="%s"];' % (id(self), self.tag)
+            yield '"%s" -> "%s" [color=blue, label="f"];' % \
+                    (id(self), id(self.functor))
+            for line in self.functor.dot():
+                yield line
+            yield '"%s" -> "%s" [color=green, label="a"];' % \
+                    (id(self), id(self.argument))
+            for line in self.argument.dot():
+                yield line
+
+
+    def __repr__(self, seen_params=None):
         if self.tag is TAG.VALUE:
             return '%s %s' % (self.tag, self.value.to_repr())
+        
         elif self.tag is TAG.BUILTIN:
             return '%s %s (%s, %d, %d, %s)' % (self.tag, self.code.func_name,
                                                self.assoc, self.prec,
                                                self.num_params, self.args)
+            
         elif self.tag is TAG.LAMBDA:
-            try:
-                x = seen_lambdas.index(self)
-                return 'v%d' % x
-            except ValueError:
-                seen_lambdas = seen_lambdas + [self]
-                return '%s v%d: (%s)' % (self.tag, len(seen_lambdas) - 1,
-                                         self.body.__repr__(seen_lambdas))
+            return '%s %r: (%r)' % (self.tag, self.param, self.body)
+            
+        elif self.tag is TAG.PARAMETER:
+            return 'v%d' % id(self)
+        
         elif self.tag is TAG.APPLICATION:
-            return '%s(%s, %s)' % (self.tag,
-                                   self.functor.__repr__(seen_lambdas),
-                                   self.argument.__repr__(seen_lambdas))
+            return '%s(%r, %r)' % (self.tag, self.functor, self.argument)
 
     def overwrite(self, other):
         self.tag = other.tag
         self.functor = other.functor
         self.argument = other.argument
         self.body = other.body
+        self.param = other.param
         self.value = other.value
         self.type_info = other.type_info
         self.code = other.code
@@ -131,7 +180,7 @@ class Node(object):
             self.functor.reduce_WHNF()
             # self.functor should now be a lambda node or a builtin node
             if self.functor.tag is TAG.LAMBDA:
-                new_graph = self.functor.body.instantiate([(self.functor,
+                new_graph = self.functor.body.instantiate([(self.functor.param,
                                                             self.argument)])
                 self.overwrite(new_graph)
             elif self.functor.tag is TAG.BUILTIN:
@@ -187,13 +236,14 @@ class Node(object):
         
         elif self.tag is TAG.LAMBDA:
             # new lambda, but as a lambda's parameter is represented by a
-            # loopback reference to the lambda node itself, we need to add
-            # to our list of substitutions to replace references to the old
-            # lambda node with references to the newly constructed lambda node
-            new_lambda = Node(tag=TAG.LAMBDA)
-            new_subs = substitutions + [(self, new_lambda)]
-            new_lambda.body = self.body.instantiate(new_subs)
-            return new_lambda
+            # reference to a param node, we need to make a new param node and
+            # make references in the body to the original lambda's parameter
+            # refer to the new parameter instead, as well as doing existing
+            # substitutions for the instantiation
+            new_param = Param()
+            new_subs = substitutions + [(self.param, new_param)]
+            new_body = self.body.instantiate(new_subs)
+            return Lambda(new_param, new_body)
 
         else:
             # no need to copy
@@ -208,14 +258,19 @@ def Application(functor, argument):
     """
     return Node(tag=TAG.APPLICATION, functor=functor, argument=argument)
 
-def Lambda():
+def Lambda(param, body):
     """
-    Helper function to make LAMBDA nodes; has no body, since references in the
-    body to the lambda's formal parameter are represented by backreferences to
-    the lambda node, so the body must usually be generated after the lambda
-    node and then attached.
+    Helper function to make LAMBDA nodes;
     """
-    return Node(tag=TAG.LAMBDA)
+    return Node(tag=TAG.LAMBDA, body=body, param=param)
+
+def Param():
+    """
+    Helper function to make PARAMETER nodes, representing the formal parameters
+    of LAMBDA nodes. They contain no useful information at all except their
+    ability to be distinguished from one another by their id, really.
+    """
+    return Node(tag=TAG.PARAMETER)
 
 def Value(intval=None, strval=None, wrapped_value=None):
     """

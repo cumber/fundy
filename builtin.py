@@ -13,7 +13,7 @@ def split_separator(line, sep):
     """
     Splits a string on a given separator that may be escaped by a backslash
     (the backslash may also be escaped), returns a list of the split parts,
-    with any escaping backslashes removed (note that sequence of backslashes
+    with any escaping backslashes removed (note that a sequence of backslashes
     that does not occur before the separator is unmolested).
     """
     parts = line.split(sep)

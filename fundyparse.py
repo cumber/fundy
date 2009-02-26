@@ -45,8 +45,12 @@ def make_parse_function(res, rules, eof=False, post_lexer=None,
 parsef = make_parse_function(regexes, rules, eof=True)
 
 def parse(code):
+    t = parsef(code)
+    return ToAST().transform(t)
+
+def show_parse(code):
     try:
         t = parsef(code)
-        return ToAST().transform(t)
+        ToAST().transform(t).view()
     except ParseError, e:
         print e.nice_error_message(source=code)

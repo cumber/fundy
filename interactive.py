@@ -1,6 +1,8 @@
 
 from pypy.lang.fundy.asteval import Eval
-from pypy.lang.fundy.fundyparse import parse, ParseError
+from pypy.lang.fundy.fundyparse import parse
+from pypy.rlib.parsing.parsing import ParseError
+from pypy.rlib.parsing.deterministic import LexerError
 
 def interactive_loop():
     eval = Eval()
@@ -18,6 +20,8 @@ def interactive_loop():
                 eval.dispatch(tree)
             except ParseError, e:
                 print e.nice_error_message(filename='console', source=st)
+            except LexerError, e:
+                print e.nice_error_message(filename='console')
         except EOFError:
             break
         
