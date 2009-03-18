@@ -1,8 +1,9 @@
 
 
-from pypy.rlib.parsing.tree import RPythonVisitor
-from pypy.lang.fundy.graph import Value, Application, Lambda, Param, ASSOC
-from pypy.lang.fundy.builtin import default_context
+from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
+from pypy.lang.fundy.cell_graph import  \
+    IntCell, CharCell, StrCell, Application, BuiltinNode, Lambda, Param
+from pypy.lang.fundy.builtin_nodes import ASSOC, default_context
 
 
 class Eval(RPythonVisitor):
@@ -13,15 +14,12 @@ class Eval(RPythonVisitor):
     that return a graph (see graph.py), and may not update self.context (but
     may refer to it for name resolution).
     """
-    def __init__(self, context=None):
+    def __init__(self, context=default_context):
         """
         context is the initial context to use; dictionary mapping strings to
         graph nodes
         """
-        if context is None:
-            self.context = default_context.copy()
-        else:
-            self.context = context.copy()
+        self.context = context.copy()
         
     def visit_program(self, node):
         for n in node.children:
@@ -30,17 +28,20 @@ class Eval(RPythonVisitor):
     def visit_print_statement(self, node):
         for n in node.children:
             graph = self.dispatch(n)
-            graph.reduce_full()
+            graph.reduce_WHNF()
             # graph should now be a value node
-            print graph.value.to_string()
+            print graph.node.to_string()
     
     def visit_show_statement(self, node):
-        for n in node.children:
-            graph = self.dispatch(n)
-            graph.view()
+        self.visit_print_statement(node)
+        #for n in node.children:
+        #    graph = self.dispatch(n)
+        #    graph.view()
     
     def visit_def_statement(self, node):
         ident = node.children[0]
+        assert isinstance(ident, Symbol)
+        name = ident.additional_info
         
         n = 1
         params = []
@@ -65,18 +66,18 @@ class Eval(RPythonVisitor):
                 body = Lambda(param, body)
             
             # now body is the top level lambda node
-            self.context[ident.additional_info] = body
+            self.context.bind(name, body)
         else:
             # no parameters, so we don't need a lambda node at all, just bind
             # the name to the expression returned by evaluating the body
-            self.context[ident.additional_info] = self.dispatch(block) 
-    
-    def visit_paramlist(self, node):
-        return [self.dispatch(n) for n in node.children]
+            self.context.bind(name, self.dispatch(block))
     
     def visit_param(self, node):
         new_param = Param()
-        self.context[node.children[0].additional_info] = new_param
+        ident = node.children[0]    # param has only one child
+        assert isinstance(ident, Symbol)
+        name = ident.additional_info
+        self.context.bind(name, new_param)
         return new_param
     
     def visit_block(self, node):
@@ -88,7 +89,9 @@ class Eval(RPythonVisitor):
     
     def visit_assign_statement(self, node):
         ident, expr = node.children
-        self.context[ident.additional_info] = self.dispatch(expr)
+        assert isinstance(ident, Symbol)
+        name = ident.additional_info
+        self.context.bind(name, self.dispatch(expr))
         
     def visit_expr(self, node):
         graph_stack = []
@@ -97,35 +100,39 @@ class Eval(RPythonVisitor):
         for n in node.children:
             # function symbol
             if n.symbol == 'IDENT':
-                functor = self.dispatch(n)
-                if not functor.is_operator():
-                    graph_stack.append(functor)
+                assert isinstance(n, Symbol)
+                n_graph = self.dispatch(n)
+                name = n.additional_info
+                if not self.context.is_operator(name):
+                    graph_stack.append(n_graph)
                 else:
+                    n_assoc = self.context.get_assoc(name)
+                    n_prec = self.context.get_prec(name)
+                    n_fix = self.context.get_fixity(name)
                     while True:
                         if not oper_stack:
                             break;
-                        oper = oper_stack[-1]
-                        if (functor.prec < oper.prec or
-                                (functor.assoc is ASSOC.LEFT and
-                                 functor.prec == oper.prec)
+                        o_graph, o_assoc, o_prec, o_fix = oper_stack[-1]
+                        if (n_prec < o_prec or
+                                (n_assoc is ASSOC.LEFT and n_prec == o_prec)
                             ):
                             # already have oper, but remove from stack
                             oper_stack.pop()
                             arg2 = graph_stack.pop()
                             arg1 = graph_stack.pop()
-                            apply_to_arg1 = Application(oper, arg1)
+                            apply_to_arg1 = Application(o_graph, arg1)
                             apply_to_arg2 = Application(apply_to_arg1, arg2)
                             graph_stack.append(apply_to_arg2)
                         else:
                             break
-                    oper_stack.append(functor)
+                    oper_stack.append((n_graph, n_assoc, n_prec, n_fix))
             else:
                 graph_stack.append(self.dispatch(n))
 
         # finished looking at the chain, give arguments to any operators
         # left on the operator stack
         while oper_stack:
-            oper = oper_stack.pop()
+            oper, _assoc, _prec, _fix = oper_stack.pop()
             arg2 = graph_stack.pop()
             arg1 = graph_stack.pop()
             apply_to_arg1 = Application(oper, arg1)
@@ -143,14 +150,14 @@ class Eval(RPythonVisitor):
 
     def visit_IDENT(self, node):
         # lookup the identifier in the context and return its graph
-        return self.context[node.additional_info]
+        return self.context.lookup(node.additional_info)
 
     def visit_NUMBER(self, node):
-        return Value(intval=int(node.additional_info))
+        return IntCell(int(node.additional_info))
 
     def visit_STRING(self, node):
-        return Value(strval=str(node.additional_info))
+        return StrCell(str(node.additional_info))
 
     def visit_CHAR(self, node):
-        return Value(charval=str(node.additional_info))
+        return CharCell(str(node.additional_info))
 

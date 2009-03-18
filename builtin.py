@@ -1,7 +1,10 @@
 
-from pypy.lang.fundy.graph import Builtin, Value, ASSOC
 import re
 import sys
+
+import py
+
+from pypy.lang.fundy.cell_graph import Builtin, StringNode, CharNode, IntNode, ASSOC
 
 
 
@@ -40,7 +43,7 @@ def split_separator(line, sep):
 
     return parts
 
-
+return_types_dict = {'int': 'IntNode', 'str': 'StringNode', 'char':CharNode}
 def make_op(name, params, types, return_type, python_exp, assoc, prec):
     """
     Makes a builtin function and wraps it in a BUILTIN node.The generated
@@ -56,9 +59,9 @@ def make_op(name, params, types, return_type, python_exp, assoc, prec):
     prec        the precedence of the builtin operator 
     """
     defstr = 'def op(%s):' % ', '.join(params)
-    convert = '\n'.join(['    %s = %s.value.%sval' % (arg, arg, typ)
+    convert = '\n'.join(['    %s = %s.%sval' % (arg, arg, typ)
                          for arg, typ in zip(params, types)])
-    retstr = '    return Value(%sval=%s)' % (return_type, python_exp)
+    retstr = '    return %s(%s)' % (return_types_dict[return_type], python_exp)
     
     exec ('\n'.join([defstr, convert, retstr]))
     
@@ -144,5 +147,5 @@ def make_builtins_from_table(tablefilename):
 # end def make_builtins_from_table
 
 
-
-default_context = make_builtins_from_table('fundy.ops')
+opsfile = py.magic.autopath().dirpath().join('fundy.ops').strpath
+default_context = make_builtins_from_table(opsfile)
