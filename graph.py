@@ -1,7 +1,7 @@
 
 import py
 
-from pypy.lang.fundy.utils import Enum
+from utils import Enum
 
 
 

@@ -1,15 +1,13 @@
 
-import autopath
-
 import sys
 
 from pypy.rlib.parsing.parsing import ParseError
 from pypy.rlib.parsing.deterministic import LexerError
 from pypy.rlib.streamio import DiskFile, construct_stream_tower
 
-from pypy.lang.fundy.asteval import Eval
-from pypy.lang.fundy.fundyparse import parse
-from pypy.lang.fundy.version import version_numbers
+from asteval import Eval
+from fundyparse import parse
+from version import version_numbers
 
 # use __stdin__ etc rather than stdin so it works in IDLE too
 stdin_fd = DiskFile(sys.__stdin__.fileno())
@@ -17,11 +15,11 @@ stdout_fd = DiskFile(sys.__stdout__.fileno())
 stderr_fd = DiskFile(sys.__stderr__.fileno())
 
 stdin_stream = construct_stream_tower(stdin_fd, buffering=1, universal=True,
-                                      reading=True, writing=False)
+        reading=True, writing=False, binary=False)
 stdout_stream = construct_stream_tower(stdout_fd, buffering=1, universal=True,
-                                       reading=False, writing=True)
+        reading=False, writing=True, binary=False)
 stderr_stream = construct_stream_tower(stderr_fd, buffering=0, universal=True,
-                                       reading=False, writing=True)
+        reading=False, writing=True, binary=False)
 
 
 class FundyConsole(object):

@@ -1,13 +1,13 @@
 
-from pypy.lang.fundy.cell_graph import BuiltinNode, IntNode, StringNode,    \
+from cell_graph import BuiltinNode, IntNode, StringNode,    \
     CharNode, Cell
 
-from pypy.lang.fundy.utils import Enum
+from utils import Enum
 
 ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
 FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
 
-from pypy.lang.fundy.context import Context, OperatorRecord
+from context import Context, OperatorRecord
 
 class UnaryBuiltinNode(BuiltinNode):
     def __init__(self, func, arg=None):

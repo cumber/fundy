@@ -1,5 +1,5 @@
 
-from pypy.lang.fundy.builtin_nodes import ASSOC, FIXITY
+from builtin_nodes import ASSOC, FIXITY
 
 
 class SimpleRecord(object):

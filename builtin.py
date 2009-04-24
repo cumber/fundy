@@ -4,7 +4,7 @@ import sys
 
 import py
 
-from pypy.lang.fundy.cell_graph import Builtin, StringNode, CharNode, IntNode, ASSOC
+from cell_graph import Builtin, StringNode, CharNode, IntNode, ASSOC
 
 
 

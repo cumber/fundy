@@ -1,8 +1,7 @@
-import autopath
 
 from pypy.translator.interactive import Translation
 
-from pypy.lang.fundy.interactive import main
+from interactive import main
 
 
 def test_translate():

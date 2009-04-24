@@ -1,9 +1,9 @@
 
-
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
-from pypy.lang.fundy.cell_graph import  \
+
+from cell_graph import      \
     IntCell, CharCell, StrCell, Application, BuiltinNode, Lambda, Param
-from pypy.lang.fundy.builtin_nodes import ASSOC, default_context
+from builtin_nodes import ASSOC, default_context
 
 
 class Eval(RPythonVisitor):
