@@ -1,0 +1,5 @@
+Fundy requires the PyPy translation framework, and the Py library.
+
+PyPy release 1.1.0 can be downloaded from http://codespeak.net/pypy/dist/pypy/doc/download.html. This package also includes the Py library.
+
+To use Fundy, all that is needed is that the path to the extracted PyPy 1.1.0 sources appears in PYTHONPATH.
