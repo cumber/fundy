@@ -1,91 +1,81 @@
 
-# Notes on the confusing pattern of returns when reducing/applying/instantiating
-# cells and nodes:
-# reducing a cell overwrites its node with the result of reducing that node
-# reducing a node returns a node that is the result of applying its functor to
-#        its argument (or itself if it's not an application node)
-# applying cell1 to cell2 returns a node that is the result of applying cell1's
-#        node to cell2
-# applying a node to a cell returns a node that is the result of instantiating
-#        its body, replacing its parameter with the cell
-# instantiating a cell returns a node, that is the result of instantiating its
-#        node
-# instantiating a node returns a new copy of itself (recursively making new
-#        cells to replace its child cells, or referencing the replacement cell
-#        if one of its children is the cell to be replaced)
-
-class Cell(object):
+class NodePtr(object):
     """
-    A cell contains a node of the graph. Its methods just forward to to the node
-    it contains. The reason for this two-part representation is that when a node
-    is reduced, we want to overwrite the node with the result of the reduction,
-    so that other references in the graph now refer to the new node and the work
-    does not have to be repeated. The node is not able to merely overwrite its
-    own members, as it usually needs to change the subclass of node.
+    A NodePtr is a reference to a node.
+
+    It can be dynamically reassigned. All other objects that want to refer to a
+    node should do it through a NodePtr, allowing the reference to be
+    over-written in place to point to a new node. Otherwise, this would be
+    possible in Python, but not in RPython as it is not possible to change the
+    __class__ to a different subclass of Node.
+
+    The primary reason for this explicit indirection is that reduction of a node
+    should be able to replace the original node with its reduction in-place, or
+    other references to the same node would have to reduce it again.
     """
     def __init__(self, node):
         self.node = node
-    
-    def reduce_WHNF(self):
+
+    def reduce_WHNF_inplace(self):
         """
-        Replaces the node inside this cell with the result of reducing that node
+        Replace the pointed at node with the result of reducing that node
         to weak head normal form.
         """
-        self.node = self.node.get_reduced_node_WHNF()
-        
-    def get_applied_node(self, argument):
+        self.node = self.node.reduce_WHNF()
+
+    def get_applied_node(self, argument_ptr):
         """
-        Applies the node inside this cell to argument, returning a new node.
+        Apply the pointed at node to argument, returning a new node.
         """
         n = self.node
         if isinstance(n, BuiltinNode):
-            return n.apply(argument)
+            return n.apply(argument_ptr)
         elif isinstance(n, LambdaNode):
-            return n.apply(argument)
+            return n.apply(argument_ptr)
         else:
             raise TypeError
-        
-    
-    def get_instantiated_node(self, replace_this, with_this):
-        """
-        Instantiates the node inside this cell, returning a new node. The graph
-        under the new node is the result of copying the graph under the original
-        this cell's node, but replacing all references to replace_this with
-        references to with_this.
-        replace_this and with_this are both cells, not nodes.
-        """
-        return self.node.instantiate(replace_this, with_this)
 
-    def instantiate(self, replace_this, with_this):
+
+    def get_instantiated_node(self, replace_this_ptr, with_this_ptr):
         """
-        Like get_instantiated_node, but returns a new Cell containing the node
-        instead of returning the node directly. Convenience function for the
-        deeper levels of instantiation that are creating new cells, as opposed
-        to the top level of instantiation that is returning a node for a cell
-        being reduced to overwrite its node with.
+        Instantiate the node inside this ptr, returning a new node. The graph
+        under the new node is the result of copying the graph under the original
+        ptr's node, but replacing all references to replace_this with
+        references to with_this.
+        replace_this and with_this are both node pointers, not nodes.
         """
-        new_node = self.node.instantiate(replace_this, with_this)
+        return self.node.instantiate(replace_this_ptr, with_this_ptr)
+
+    def get_instantiated_node_ptr(self, replace_this_ptr, with_this_ptr):
+        """
+        Like get_instantiated_node, but return a new NodePtr pointing to the
+        node instead of returning the node directly. Convenience function for
+        the deeper levels of instantiation that are creating new pointers to new
+        nodes, as opposed to the top level of instantiation that is returning a
+        node for a pointer being reduced to overwrite its node with.
+        """
+        new_node = self.node.instantiate(replace_this_ptr, with_this_ptr)
         if new_node is self.node:
-            # only need to make a new cell if the node has changed
+            # shouldn't make a new pointer to the same node
             return self
         else:
-            return Cell(self.node.instantiate(replace_this, with_this))
+            return NodePtr(new_node)
 
     #def kind(self):
     #    return type(self.node)
-    
+
     #def is_operator(self):
     #    return self.node.is_operator()
-    
+
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
-        # toplevel is just to make sure that the repr for a Cell says that
-        # it's a Cell, whereas the repr for a node doesn't, but only at
+        # toplevel is just to make sure that the repr for a NodePtr says that
+        # it's a NodePtr, whereas the repr for a node doesn't, but only at
         # the top level, so the graph is easier to read
         if toplevel:
-            return 'Cell(%s)' % self.node.__repr__(False)
+            return '*(%s)' % self.node.__repr__(False)
         else:
             return self.node.__repr__(toplevel)
 
@@ -93,35 +83,96 @@ class Cell(object):
 class Node(object):
     """
     Base class for the different kinds of node.
+
+    The methods here do not modify the nodes, they return new nodes.
+
+    Nodes should have NodePtr data members, not refer directly to other Nodes.
     """
-    def get_reduced_node_WHNF(self):
+    def reduce_WHNF(self):
         """
         Return a Node that is the result of reducing this Node to weak head
         normal form. Either returns a new Node, or self.
         """
         return self     # by default reduction doesn't change nodes
-    
-    def instantiate(self, replace_this_cell, with_this_cell):
+
+    def instantiate(self, replace_this_ptr, with_this_ptr):
         """
-        Instantiates a node, returning a node that is the result of replacing
-        one cell with another in the subgraph under this node. Returns self
-        only in the case where it is absolutely known that replace_this_cell
-        cannot occur in the subgraph under this node (basically  
+        Instantiate a node, returning a node that is the result of replacing
+        one ptr with another in the subgraph under this node. Returns self
+        only in the case where it is absolutely known that replace_this_ptr
+        cannot occur in the subgraph under this node (basically at leaf nodes).
         """
         raise NotImplementedError
-    
-    def apply(self, argument_cell):
+
+    def apply(self, argument_ptr):
         """
-        Applies a node to an argument, returning a node that is the result of
+        Apply a node to an argument, returning a node that is the result of
         the application.
         """
         raise TypeError   # only lambdas and builtins can be applied
-    
+
     #def is_operator(self):
     #    return False
 
     def to_string(self):
         raise NotImplementedError
+
+    @classmethod
+    def add_instantiate_fn(cls, *attr_names):
+        """
+        NOT_RPYTHON: Return an instantiation function.
+
+        This is to define the common instantiation pattern in one place:
+
+            for each attr:
+                if attr is the thing to replace, replace it
+                else replace attr with its own instantiation
+            if all replacement attrs are the same as the original, return self
+            else return new node created with the replacement attrs
+
+        This function is not RPython, but the function it returns must be,
+        which is why it is defined by eval()ing a string instead of using the
+        perfectly adequate capabilities of Python.
+
+        Manually defining an instantiation function that does this logic can
+        be replaced by:
+
+        class FOO:
+            ...
+        FOO.add_instantiate_fn(attr1, attr2, ..., attrN)
+
+        attr1, attr2, ..., attrN must all be the names of data members of FOO
+        nodes, and must all be of type NodePtr. Constructing a valid FOO must
+        also be able to be acomplished by FOO(attr1, attr2, ..., attrN) (i.e.
+        in the same order as the attributes appeared in the call to
+        add_instantiate_fn).
+        """
+        conj_fragments = []
+        arg_fragments = []
+        func_fragments = ["def instantiate(self, replace_this_ptr, "
+                                           "with_this_ptr):\n"]
+        for name in attr_names:
+            s = ("    if self.%(name)s is replace_this_ptr:\n"
+                 "        new_%(name)s = with_this_ptr\n"
+                 "    else:\n"
+                 "        new_%(name)s = self.%(name)s."
+                                    "get_instantiated_node_ptr("
+                                        "replace_this_ptr, with_this_ptr)\n"
+                ) % {'name': name}
+            func_fragments.append(s)
+            conj_fragments.append("new_%(name)s is self.%(name)s" %
+                                        {'name': name})
+            arg_fragments.append("new_%(name)s" % {'name': name})
+
+        func_fragments += ["    if ", ' and '.join(conj_fragments), ":\n"
+                           "        return self\n"
+                           "    else:\n"
+                           "        return ", cls.__name__, "(",
+                                        ', '.join(arg_fragments), ")\n"]
+
+        func_str = ''.join(func_fragments)
+        exec func_str
+        cls.instantiate = instantiate
 
 
 
@@ -129,114 +180,57 @@ class ApplicationNode(Node):
     def __init__(self, functor, argument):
         self.functor = functor
         self.argument = argument
-        
-    def get_reduced_node_WHNF(self):
-        self.functor.reduce_WHNF()
+
+    def reduce_WHNF(self):
+        self.functor.reduce_WHNF_inplace()
         # self.functor should now be a lambda node or a builtin node
         new_node = self.functor.get_applied_node(self.argument)
         # now try to reduce the result, in case it returned another application
-        return new_node.get_reduced_node_WHNF()
-    
-    def instantiate(self, replace_this_cell, with_this_cell):
-        if replace_this_cell is self.functor:
-            new_functor = with_this_cell
-        else:
-            new_functor = self.functor.instantiate(replace_this_cell,
-                                                   with_this_cell)
-        
-        if replace_this_cell is self.argument:
-            new_argument = with_this_cell
-        else:
-            new_argument = self.argument.instantiate(replace_this_cell,
-                                                     with_this_cell)
-         
-        if new_functor is self.functor and new_argument is self.argument:
-            # no need to create a new node if both the functor and the argument
-            # ended up being the same
-            return self
-        else:
-            return ApplicationNode(new_functor, new_argument)
+        return new_node.reduce_WHNF()
 
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
-        return 'Application(%s to %s)' % (self.functor.__repr__(toplevel),
-                                          self.argument.__repr__(toplevel))
-    
+        return 'Application(%s to %s)' % (self.functor.__repr__(False),
+                                          self.argument.__repr__(False))
+
+ApplicationNode.add_instantiate_fn('functor', 'argument')
+
 
 class LambdaNode(Node):
     def __init__(self, parameter, body):
         self.parameter = parameter
         self.body = body
-    
+
     def apply(self, argument):
         if self.body is self.parameter:     # if the body is just the param
             return argument.node            # just return the arg node now
         return self.body.get_instantiated_node(self.parameter, argument)
-    
-    def instantiate(self, replace_this_cell, with_this_cell):
-        assert replace_this_cell is not self.parameter, \
-            "Don't instantiate a lambda replacing its parameter, apply it to something"
-        
-        if self.body is replace_this_cell:
-            new_body = with_this_cell
-        else:
-            new_body = self.body.instantiate(replace_this_cell, with_this_cell)
-        
-        if new_body is self.body:
-            # no need to create new node if the body didn't change
-            return self
-        else:
-            return LambdaNode(self.parameter, new_body)
 
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
-        return 'LAMBDA %s --> %s' % (self.parameter.__repr__(toplevel),
-                                     self.body.__repr__(toplevel))
+        return 'LAMBDA %s --> %s' % (self.parameter.__repr__(False),
+                                     self.body.__repr__(False))
+
+LambdaNode.add_instantiate_fn('parameter', 'body')
+LambdaNode.inner_instantiate = LambdaNode.instantiate
+def outer_instantiate(self, replace_this_ptr, with_this_ptr):
+    assert replace_this_ptr is not self.parameter, \
+    "Don't instantiate a lambda replacing its parameter, apply it to something"
+    return self.inner_instantiate(replace_this_ptr, with_this_ptr)
+LambdaNode.instantiate = outer_instantiate
 
 
 class BuiltinNode(Node):
-    #def __init__(self, code, num_params, assoc, prec, arguments=[]):
-    #    self.code = code
-    #    self.assoc = assoc
-    #    self.prec = prec
-    #    self.args_needed = num_params
-    #    self.arguments = arguments
-    #    
-    #def apply(self, argument):
-    #    if self.args_needed == 1:
-    #        # have enough arguments to apply the builtin, reduce them fully
-    #        # to make sure they are value nodes
-    #        arg_cells = self.arguments + [argument]
-    #        arg_nodes = []
-    #        for a in arg_cells:
-    #            a.reduce_WHNF()
-    #            arg_nodes.append(a.node)
-    #        return self.code(*arg_nodes)
-    #    elif self.args_needed > 1:
-    #        return BuiltinNode(self.code, self.args_needed - 1, self.assoc,
-    #                           self.prec, self.arguments + [argument])
-    #    else:
-    #        assert False 
-    #
-    #def instantiate(self, replace_this_cell, with_this_cell):
-    #    new_args = []
-    #    for a in self.arguments:
-    #        new_args.append(a.instantiate(replace_this_cell, with_this_cell))
-    #    return BuiltinNode(self.code, self.args_needed, self.assoc, self.prec,
-    #                       self.arguments)
-    
-    #def is_operator(self):
-    #    return self.assoc is not ASSOC.NONE
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
         return 'BUILTIN %s' % self.func.func_name
-            
+
 class ParameterNode(Node):
     # used in __repr__ of ParameterNode, should not be needed by translation
     _param_dict = {}
@@ -244,14 +238,17 @@ class ParameterNode(Node):
     def __init__(self):
         pass    # parameter nodes don't actually hold any information other than
                 # their identity
-    
-    def instantiate(self, replace_this_cell, with_this_cell):
+
+    def instantiate(self, replace_this_ptr, with_this_ptr):
         # parameters have no children, so do not need to make a copy as it will
         # always be identical to the original (and this simplifies instantiation
         # of lambda nodes, which assume they can just reuse the parameter node)
         return self
 
     def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
         if not self in self._param_dict:
             self._param_dict[self] = 'v%d' % len(self._param_dict)
         return self._param_dict[self]
@@ -259,25 +256,43 @@ class ParameterNode(Node):
 
 
 class ValueNode(Node):
-    def instantiate(self, replace_this_cell, with_this_cell):
+    """
+    Base class for nodes containing values.
+    """
+    pass
+
+
+class ConsNode(ValueNode):
+    """
+    Cons node contains two other nodes. (pointers!)
+    """
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+
+ConsNode.add_instantiate_fn('a', 'b')
+
+
+class PrimitiveNode(ValueNode):
+    def instantiate(self, replace_this_ptr, with_this_ptr):
         return self
 
     def __repr__(self, toplevel=True):
         return 'VALUE %s' % self.to_string()
 
-class StringNode(ValueNode):
+class StringNode(PrimitiveNode):
     def __init__(self, value):
         self.strval = value
-    
+
     def to_string(self):
         return self.strval
-    
+
     get_string = to_string
-    
+
     def to_repr(self):
         return repr(self.strval)
 
-class CharNode(ValueNode):
+class CharNode(PrimitiveNode):
     def __init__(self, value):
         assert len(value) == 1
         self.charval = value
@@ -289,63 +304,45 @@ class CharNode(ValueNode):
 
     def to_repr(self):
         return repr(self.strval)
-    
-class IntNode(ValueNode):
+
+class IntNode(PrimitiveNode):
     def __init__(self, value):
         self.intval = value
-    
+
     def to_string(self):
         return str(self.intval)
 
     def get_int(self):
         return self.intval
-    
+
     to_repr = to_string
 
 
 
 def Application(functor, argument):
     """
-    Helper function to make cells containing application nodes
+    Helper function to make pointers to new application nodes
     """
-    return Cell(ApplicationNode(functor, argument))
+    return NodePtr(ApplicationNode(functor, argument))
 
 def Lambda(param, body):
     """
-    Helper function to make cells containing lambda nodes
+    Helper function to make pointers to new lambda nodes
     """
-    return Cell(LambdaNode(param, body))
+    return NodePtr(LambdaNode(param, body))
 
 def Param():
     """
-    Helper function to make cells containing parameter nodes
+    Helper function to make pointers to new parameter nodes
     """
-    return Cell(ParameterNode())
+    return NodePtr(ParameterNode())
 
-#def ValueNode(intval=None, strval=None, charval=None):
-#    """
-#    Helper function to make the appropriate ValueNode for a python value
-#    """
-#    if intval is not None:
-#        return IntNode(intval)
-#    elif strval is not None:
-#        return StringNode(strval)
-#    elif charval is not None:
-#        return CharNode(charval)
-#    else:
-#        assert False
 
-def CharCell(c):
-    return Cell(CharNode(c))
+def CharPtr(c):
+    return NodePtr(CharNode(c))
 
-def IntCell(i):
-    return Cell(IntNode(i))
+def IntPtr(i):
+    return NodePtr(IntNode(i))
 
-def StrCell(s):
-    return Cell(StringNode(s))
-
-def Builtin(code, assoc=None, prec=None):
-    """
-    NOT_RPYTHON: Helper function to make BUILTIN nodes
-    """
-    return Cell(BuiltinNode(code, code.func_code.co_argcount, assoc, prec))
+def StrPtr(s):
+    return NodePtr(StringNode(s))

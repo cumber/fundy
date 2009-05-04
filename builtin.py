@@ -1,6 +1,6 @@
 
-from cell_graph import BuiltinNode, IntNode, StringNode,    \
-    CharNode, Cell
+from graph import BuiltinNode, IntNode, StringNode,    \
+    CharNode, NodePtr
 
 from utils import Enum
 
@@ -14,10 +14,10 @@ class UnaryBuiltinNode(BuiltinNode):
         self.func = func
 
     def apply(self, argument):
-        argument.reduce_WHNF()
+        argument.reduce_WHNF_inplace()
         return self.func(argument)
 
-    def instantiate(self, replace_this_cell, with_this_cell):
+    def instantiate(self, replace_this_ptr, with_this_ptr):
         return self
 
 
@@ -40,19 +40,21 @@ class BinaryBuiltinNode(BuiltinNode):
         if arg1 and arg2:
             # have enough arguments to apply the builtin, reduce them
             # to make sure they are value nodes, then call self.func
-            arg1.reduce_WHNF()
-            arg2.reduce_WHNF()
+            arg1.reduce_WHNF_inplace()
+            arg2.reduce_WHNF_inplace()
             return self.func(arg1, arg2)
         else:
             return BinaryBuiltinNode(self.func, arg1, arg2)
 
-    def instantiate(self, replace_this_cell, with_this_cell):
+    def instantiate(self, replace_this_ptr, with_this_ptr):
         if self.arg1:
-            arg1 = self.arg1.instantiate(replace_this_cell, with_this_cell)
+            arg1 = self.arg1.get_instantiated_node_ptr(replace_this_ptr,
+                                                       with_this_ptr)
         else:
             arg1 = None
         if self.arg2:
-            arg2 = self.arg2.instantiate(replace_this_cell, with_this_cell)
+            arg2 = self.arg2.get_instantiated_node_ptr(replace_this_ptr,
+                                                       with_this_ptr)
         else:
             arg2 = None
 
@@ -72,7 +74,7 @@ def _get_typecheck_func(typ):
     NOT_RPYTHON:
     """
     node_class = _types_dict[typ]
-    return lambda cell: isinstance(cell.node, node_class)
+    return lambda ptr: isinstance(ptr.node, node_class)
 
 
 def _get_extract_func(typ):
@@ -81,7 +83,7 @@ def _get_extract_func(typ):
     """
     node_class = _types_dict[typ]
     getter = getattr(node_class, 'get_' + typ)
-    return lambda cell: getter(cell.node)
+    return lambda ptr: getter(ptr.node)
 
 def _get_box_func(typ):
     """
@@ -114,11 +116,11 @@ class OpTable(object):
             arg_types = []
         elif arg_types is None:
             arg_types = []
-        
+
         if ret_type is None:
             ret_type = default_type
-            
-        
+
+
         def decorator(func):
             """
             NOT_RPYTHON: 
@@ -154,7 +156,7 @@ class OpTable(object):
                 # end def wrapper
 
                 wrapper.func_name = _name
-                cell = Cell(UnaryBuiltinNode(wrapper))
+                ptr = NodePtr(UnaryBuiltinNode(wrapper))
                 if fixity is None:
                     _fixity = FIXITY.PREFIX
 
@@ -172,7 +174,7 @@ class OpTable(object):
                 # end def wrapper
 
                 wrapper.func_name = _name
-                cell = Cell(BinaryBuiltinNode(wrapper))
+                ptr = NodePtr(BinaryBuiltinNode(wrapper))
                 if fixity is None:
                     _fixity = FIXITY.INFIX
 
@@ -188,10 +190,10 @@ class OpTable(object):
                 _prec = 0
             else:
                 _prec = prec
-            
-            self.register_name(_name, cell, _assoc, _prec, _fixity)
 
-            return cell
+            self.register_name(_name, ptr, _assoc, _prec, _fixity)
+
+            return ptr
         # end def decorator
 
         return decorator
@@ -234,4 +236,4 @@ def neg(x):
     return -1 * x
 
 default_context = ops.make_context()
-    
+

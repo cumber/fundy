@@ -1,5 +1,5 @@
 
-from builtin_nodes import ASSOC, FIXITY
+from builtin import ASSOC, FIXITY
 
 
 class SimpleRecord(object):
@@ -45,7 +45,7 @@ class Context(object):
 
     def bind(self, name, graph):
         self.graphs[name] = SimpleRecord(graph)
-    
+
     def bind_operator(self, name, graph, assoc, prec, fixity):
         # TODO: support overloaded names
         self.graphs[name] = OperatorRecord(graph, assoc, prec, fixity)

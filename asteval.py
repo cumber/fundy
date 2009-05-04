@@ -1,9 +1,9 @@
 
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
 
-from cell_graph import      \
-    IntCell, CharCell, StrCell, Application, BuiltinNode, Lambda, Param
-from builtin_nodes import ASSOC, default_context
+from graph import      \
+    IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param
+from builtin import ASSOC, default_context
 
 
 class Eval(RPythonVisitor):
@@ -20,7 +20,7 @@ class Eval(RPythonVisitor):
         graph nodes
         """
         self.context = context.copy()
-        
+
     def visit_program(self, node):
         for n in node.children:
             self.dispatch(n)
@@ -28,50 +28,50 @@ class Eval(RPythonVisitor):
     def visit_print_statement(self, node):
         for n in node.children:
             graph = self.dispatch(n)
-            graph.reduce_WHNF()
+            graph.reduce_WHNF_inplace()
             # graph should now be a value node
             print graph.node.to_string()
-    
+
     def visit_show_statement(self, node):
         self.visit_print_statement(node)
         #for n in node.children:
         #    graph = self.dispatch(n)
         #    graph.view()
-    
+
     def visit_def_statement(self, node):
         ident = node.children[0]
         assert isinstance(ident, Symbol)
         name = ident.additional_info
-        
+
         n = 1
         params = []
         while node.children[n].symbol == 'param':
             params.append(node.children[n])
             n += 1
-        
+
         if node.children[n].symbol == 'type_decl':
             type_decl, block = node.children[n:]
         else:
             block = node.children[n]
             type_decl = None
-            
+
         if params:
             sub_eval = Eval(self.context)
             param_nodes = [sub_eval.dispatch(p) for p in params]
             body = sub_eval.dispatch(block)
-            
+
             # build the lambda nodes in reverse order, as each contains the next
             param_nodes.reverse()
             for param in param_nodes:
                 body = Lambda(param, body)
-            
+
             # now body is the top level lambda node
             self.context.bind(name, body)
         else:
             # no parameters, so we don't need a lambda node at all, just bind
             # the name to the expression returned by evaluating the body
             self.context.bind(name, self.dispatch(block))
-    
+
     def visit_param(self, node):
         new_param = Param()
         ident = node.children[0]    # param has only one child
@@ -79,20 +79,20 @@ class Eval(RPythonVisitor):
         name = ident.additional_info
         self.context.bind(name, new_param)
         return new_param
-    
+
     def visit_block(self, node):
         # last item is the expression to be returned, any other items
         # are name binding statements for the current context
         for i in xrange(len(node.children) - 1):
             self.dispatch(node.children[i])
         return self.dispatch(node.children[-1])
-    
+
     def visit_assign_statement(self, node):
         ident, expr = node.children
         assert isinstance(ident, Symbol)
         name = ident.additional_info
         self.context.bind(name, self.dispatch(expr))
-        
+
     def visit_expr(self, node):
         graph_stack = []
         oper_stack = []
@@ -153,11 +153,11 @@ class Eval(RPythonVisitor):
         return self.context.lookup(node.additional_info)
 
     def visit_NUMBER(self, node):
-        return IntCell(int(node.additional_info))
+        return IntPtr(int(node.additional_info))
 
     def visit_STRING(self, node):
-        return StrCell(str(node.additional_info))
+        return StrPtr(str(node.additional_info))
 
     def visit_CHAR(self, node):
-        return CharCell(str(node.additional_info))
+        return CharPtr(str(node.additional_info))
 

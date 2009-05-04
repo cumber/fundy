@@ -75,7 +75,7 @@ class FundyConsole(object):
 
     def write(self, s):
         self.stderr.write(s)
-    
+
     def compile(self, source):
         try:
             tree = parse(source + '\n')
@@ -102,14 +102,14 @@ class FundyConsole(object):
                 return True     # incomplete input
             else:
                 self.runcode(tree)
-        
+
         # compile error or successfully ran
         return False
 
     def runcode(self, tree):
         self.asteval.dispatch(tree)
-        
-    
+
+
 
 
 def main():

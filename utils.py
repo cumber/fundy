@@ -27,7 +27,7 @@ class Enum(object):
         for s in symbols:
             setattr(self, s, EnumVal(s, i))
             i += 1
-    
+
     def __repr__(self):
         return 'Enum(%s)' %  \
                 ', '.join([repr(k)
