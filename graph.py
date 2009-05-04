@@ -1,292 +1,351 @@
 
-import py
+# Notes on the confusing pattern of returns when reducing/applying/instantiating
+# cells and nodes:
+# reducing a cell overwrites its node with the result of reducing that node
+# reducing a node returns a node that is the result of applying its functor to
+#        its argument (or itself if it's not an application node)
+# applying cell1 to cell2 returns a node that is the result of applying cell1's
+#        node to cell2
+# applying a node to a cell returns a node that is the result of instantiating
+#        its body, replacing its parameter with the cell
+# instantiating a cell returns a node, that is the result of instantiating its
+#        node
+# instantiating a node returns a new copy of itself (recursively making new
+#        cells to replace its child cells, or referencing the replacement cell
+#        if one of its children is the cell to be replaced)
 
-from utils import Enum
-
-
-
-# define type code enums
-TYPE = Enum('INTEGER', 'STRING', 'CHAR')
-
-
-class W_Value(object):
+class Cell(object):
     """
-    Represents a runtime app-level value
+    A cell contains a node of the graph. Its methods just forward to to the node
+    it contains. The reason for this two-part representation is that when a node
+    is reduced, we want to overwrite the node with the result of the reduction,
+    so that other references in the graph now refer to the new node and the work
+    does not have to be repeated. The node is not able to merely overwrite its
+    own members, as it usually needs to change the subclass of node.
     """
-    pass
+    def __init__(self, node):
+        self.node = node
+    
+    def reduce_WHNF(self):
+        """
+        Replaces the node inside this cell with the result of reducing that node
+        to weak head normal form.
+        """
+        self.node = self.node.get_reduced_node_WHNF()
+        
+    def get_applied_node(self, argument):
+        """
+        Applies the node inside this cell to argument, returning a new node.
+        """
+        n = self.node
+        if isinstance(n, BuiltinNode):
+            return n.apply(argument)
+        elif isinstance(n, LambdaNode):
+            return n.apply(argument)
+        else:
+            raise TypeError
+        
+    
+    def get_instantiated_node(self, replace_this, with_this):
+        """
+        Instantiates the node inside this cell, returning a new node. The graph
+        under the new node is the result of copying the graph under the original
+        this cell's node, but replacing all references to replace_this with
+        references to with_this.
+        replace_this and with_this are both cells, not nodes.
+        """
+        return self.node.instantiate(replace_this, with_this)
 
-class W_Int(object):
+    def instantiate(self, replace_this, with_this):
+        """
+        Like get_instantiated_node, but returns a new Cell containing the node
+        instead of returning the node directly. Convenience function for the
+        deeper levels of instantiation that are creating new cells, as opposed
+        to the top level of instantiation that is returning a node for a cell
+        being reduced to overwrite its node with.
+        """
+        new_node = self.node.instantiate(replace_this, with_this)
+        if new_node is self.node:
+            # only need to make a new cell if the node has changed
+            return self
+        else:
+            return Cell(self.node.instantiate(replace_this, with_this))
+
+    #def kind(self):
+    #    return type(self.node)
+    
+    #def is_operator(self):
+    #    return self.node.is_operator()
+    
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        # toplevel is just to make sure that the repr for a Cell says that
+        # it's a Cell, whereas the repr for a node doesn't, but only at
+        # the top level, so the graph is easier to read
+        if toplevel:
+            return 'Cell(%s)' % self.node.__repr__(False)
+        else:
+            return self.node.__repr__(toplevel)
+
+
+class Node(object):
     """
-    Represents a runtime app-level int
+    Base class for the different kinds of node.
     """
-    def __init__(self, value):
-        self.type_info = TYPE.INTEGER
-        self.intval = value
+    def get_reduced_node_WHNF(self):
+        """
+        Return a Node that is the result of reducing this Node to weak head
+        normal form. Either returns a new Node, or self.
+        """
+        return self     # by default reduction doesn't change nodes
+    
+    def instantiate(self, replace_this_cell, with_this_cell):
+        """
+        Instantiates a node, returning a node that is the result of replacing
+        one cell with another in the subgraph under this node. Returns self
+        only in the case where it is absolutely known that replace_this_cell
+        cannot occur in the subgraph under this node (basically  
+        """
+        raise NotImplementedError
+    
+    def apply(self, argument_cell):
+        """
+        Applies a node to an argument, returning a node that is the result of
+        the application.
+        """
+        raise TypeError   # only lambdas and builtins can be applied
+    
+    #def is_operator(self):
+    #    return False
 
     def to_string(self):
-        return str(self.intval)
+        raise NotImplementedError
 
-    to_repr = to_string
 
-class W_String(object):
-    """
-    Represents a runtime app-level string
-    """
+
+class ApplicationNode(Node):
+    def __init__(self, functor, argument):
+        self.functor = functor
+        self.argument = argument
+        
+    def get_reduced_node_WHNF(self):
+        self.functor.reduce_WHNF()
+        # self.functor should now be a lambda node or a builtin node
+        new_node = self.functor.get_applied_node(self.argument)
+        # now try to reduce the result, in case it returned another application
+        return new_node.get_reduced_node_WHNF()
+    
+    def instantiate(self, replace_this_cell, with_this_cell):
+        if replace_this_cell is self.functor:
+            new_functor = with_this_cell
+        else:
+            new_functor = self.functor.instantiate(replace_this_cell,
+                                                   with_this_cell)
+        
+        if replace_this_cell is self.argument:
+            new_argument = with_this_cell
+        else:
+            new_argument = self.argument.instantiate(replace_this_cell,
+                                                     with_this_cell)
+         
+        if new_functor is self.functor and new_argument is self.argument:
+            # no need to create a new node if both the functor and the argument
+            # ended up being the same
+            return self
+        else:
+            return ApplicationNode(new_functor, new_argument)
+
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        return 'Application(%s to %s)' % (self.functor.__repr__(toplevel),
+                                          self.argument.__repr__(toplevel))
+    
+
+class LambdaNode(Node):
+    def __init__(self, parameter, body):
+        self.parameter = parameter
+        self.body = body
+    
+    def apply(self, argument):
+        if self.body is self.parameter:     # if the body is just the param
+            return argument.node            # just return the arg node now
+        return self.body.get_instantiated_node(self.parameter, argument)
+    
+    def instantiate(self, replace_this_cell, with_this_cell):
+        assert replace_this_cell is not self.parameter, \
+            "Don't instantiate a lambda replacing its parameter, apply it to something"
+        
+        if self.body is replace_this_cell:
+            new_body = with_this_cell
+        else:
+            new_body = self.body.instantiate(replace_this_cell, with_this_cell)
+        
+        if new_body is self.body:
+            # no need to create new node if the body didn't change
+            return self
+        else:
+            return LambdaNode(self.parameter, new_body)
+
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        return 'LAMBDA %s --> %s' % (self.parameter.__repr__(toplevel),
+                                     self.body.__repr__(toplevel))
+
+
+class BuiltinNode(Node):
+    #def __init__(self, code, num_params, assoc, prec, arguments=[]):
+    #    self.code = code
+    #    self.assoc = assoc
+    #    self.prec = prec
+    #    self.args_needed = num_params
+    #    self.arguments = arguments
+    #    
+    #def apply(self, argument):
+    #    if self.args_needed == 1:
+    #        # have enough arguments to apply the builtin, reduce them fully
+    #        # to make sure they are value nodes
+    #        arg_cells = self.arguments + [argument]
+    #        arg_nodes = []
+    #        for a in arg_cells:
+    #            a.reduce_WHNF()
+    #            arg_nodes.append(a.node)
+    #        return self.code(*arg_nodes)
+    #    elif self.args_needed > 1:
+    #        return BuiltinNode(self.code, self.args_needed - 1, self.assoc,
+    #                           self.prec, self.arguments + [argument])
+    #    else:
+    #        assert False 
+    #
+    #def instantiate(self, replace_this_cell, with_this_cell):
+    #    new_args = []
+    #    for a in self.arguments:
+    #        new_args.append(a.instantiate(replace_this_cell, with_this_cell))
+    #    return BuiltinNode(self.code, self.args_needed, self.assoc, self.prec,
+    #                       self.arguments)
+    
+    #def is_operator(self):
+    #    return self.assoc is not ASSOC.NONE
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        return 'BUILTIN %s' % self.func.func_name
+            
+class ParameterNode(Node):
+    # used in __repr__ of ParameterNode, should not be needed by translation
+    _param_dict = {}
+
+    def __init__(self):
+        pass    # parameter nodes don't actually hold any information other than
+                # their identity
+    
+    def instantiate(self, replace_this_cell, with_this_cell):
+        # parameters have no children, so do not need to make a copy as it will
+        # always be identical to the original (and this simplifies instantiation
+        # of lambda nodes, which assume they can just reuse the parameter node)
+        return self
+
+    def __repr__(self, toplevel=True):
+        if not self in self._param_dict:
+            self._param_dict[self] = 'v%d' % len(self._param_dict)
+        return self._param_dict[self]
+
+
+
+class ValueNode(Node):
+    def instantiate(self, replace_this_cell, with_this_cell):
+        return self
+
+    def __repr__(self, toplevel=True):
+        return 'VALUE %s' % self.to_string()
+
+class StringNode(ValueNode):
     def __init__(self, value):
-        self.type_info = TYPE.STRING
         self.strval = value
-
+    
     def to_string(self):
         return self.strval
-
+    
+    get_string = to_string
+    
     def to_repr(self):
         return repr(self.strval)
 
-class W_Char(W_String):
-    """
-    Represents a runtime app-level character
-    """
+class CharNode(ValueNode):
     def __init__(self, value):
         assert len(value) == 1
-        W_String.__init__(self, value)
-        self.type_info = CHAR
+        self.charval = value
 
+    def to_string(self):
+        return self.charval
 
-class ReductionError(Exception):
-    """
-    An error encountered during reduction
-    """
-    def __init__(self, message=None):
-        self.message = message
+    get_char = to_string
 
-    def __str__(self):
-        if self.message is not None:
-            return "ReductionError: " + self.message
-        else:
-            return "ReductionError"
-
-
-# constants for the Node tags
-TAG = Enum('VALUE', 'BUILTIN', 'LAMBDA', 'PARAMETER', 'APPLICATION')
-
-# constants for associativity
-ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
-
-class Node(object):
-    def __init__(self, tag, functor=None, argument=None, body=None,
-                 value=None, type_info=None, code=None, param=None,
-                 assoc=ASSOC.NONE, prec=0, num_params=None, args=[]):
-        self.tag = tag
-        self.functor = functor
-        self.argument = argument
-        self.body = body
-        self.param = param
-        self.value = value
-        self.type_info = type_info
-        self.code = code
-        self.assoc = assoc
-        self.prec = prec
-        self.num_params = num_params
-        self.args = args
+    def to_repr(self):
+        return repr(self.strval)
     
-    def view(self):
-        from dotviewer import graphclient
-        content = ["digraph G{"]
-        content.extend(self.dot())
-        content.append("}")
-        p = py.test.ensuretemp("automaton").join("temp.dot")
-        p.write("\n".join(content))
-        graphclient.display_dot_file(str(p))
+class IntNode(ValueNode):
+    def __init__(self, value):
+        self.intval = value
+    
+    def to_string(self):
+        return str(self.intval)
 
-    def dot(self, seen_params=None):
-        if self.tag is TAG.VALUE:
-            yield '"%s" [shape=box, label="%s\\n%s"];' % (id(self), self.tag,
-                                                         self.value.to_repr())
-        
-        elif self.tag is TAG.BUILTIN:
-            yield '"%s" [shape=box, label="%s"];' % (id(self),
-                                                     self.code.func_name)
-            for arg in self.args:
-                yield '"%s" -> "%s" [color=green, label="a"];' % (id(self), id(arg))
-                for line in arg.dot():
-                    yield line
-            
-        elif self.tag is TAG.LAMBDA:
-            yield '"%s" [shape=octagon, label="%s"];' % (id(self), self.tag)
-            yield '"%s" -> "%s" [color=yellow, label="P"];' % (id(self), id(self.param))
-            for line in self.param.dot():
-                yield line
-            yield '"%s" -> "%s" [color=red];' % (id(self), id(self.body))
-            for line in self.body.dot():
-                yield line
-            
-        elif self.tag is TAG.PARAMETER:
-            yield '"%s" [shape=octagon, label="%s"];' % (id(self), self.tag)
-        
-        elif self.tag is TAG.APPLICATION:
-            yield '"%s" [shape=ellipse, label="%s"];' % (id(self), self.tag)
-            yield '"%s" -> "%s" [color=blue, label="f"];' % \
-                    (id(self), id(self.functor))
-            for line in self.functor.dot():
-                yield line
-            yield '"%s" -> "%s" [color=green, label="a"];' % \
-                    (id(self), id(self.argument))
-            for line in self.argument.dot():
-                yield line
+    def get_int(self):
+        return self.intval
+    
+    to_repr = to_string
 
-
-    def __repr__(self, seen_params=None):
-        if self.tag is TAG.VALUE:
-            return '%s %s' % (self.tag, self.value.to_repr())
-        
-        elif self.tag is TAG.BUILTIN:
-            return '%s %s (%s, %d, %d, %s)' % (self.tag, self.code.func_name,
-                                               self.assoc, self.prec,
-                                               self.num_params, self.args)
-            
-        elif self.tag is TAG.LAMBDA:
-            return '%s %r: (%r)' % (self.tag, self.param, self.body)
-            
-        elif self.tag is TAG.PARAMETER:
-            return 'v%d' % id(self)
-        
-        elif self.tag is TAG.APPLICATION:
-            return '%s(%r, %r)' % (self.tag, self.functor, self.argument)
-
-    def overwrite(self, other):
-        self.tag = other.tag
-        self.functor = other.functor
-        self.argument = other.argument
-        self.body = other.body
-        self.param = other.param
-        self.value = other.value
-        self.type_info = other.type_info
-        self.code = other.code
-        self.assoc = other.assoc
-        self.prec = other.prec
-        self.num_params = other.num_params
-        self.args = other.args
-
-    def copy(self):
-        new = Node(tag=self.tag)
-        new.overwrite(self)
-        return new
-
-    def is_operator(self):
-        return not self.assoc is ASSOC.NONE
-
-    def reduce_WHNF(self):
-        if self.tag is TAG.APPLICATION:           
-            self.functor.reduce_WHNF()
-            # self.functor should now be a lambda node or a builtin node
-            if self.functor.tag is TAG.LAMBDA:
-                new_graph = self.functor.body.instantiate([(self.functor.param,
-                                                            self.argument)])
-                self.overwrite(new_graph)
-            elif self.functor.tag is TAG.BUILTIN:
-                if self.functor.num_params == 1:    # last arg, can call
-                    args = self.functor.args
-                    args.append(self.argument)
-                    for n in args:
-                        n.reduce_full()
-                    self.overwrite(self.functor.code(*args))
-                elif self.functor.num_params > 1:   # still need more arguments
-                    new = Node(tag=TAG.BUILTIN, code=self.functor.code,
-                               assoc=self.functor.assoc, prec=self.functor.prec,
-                               num_params=(self.functor.num_params - 1),
-                               args=(self.functor.args + [self.argument]))
-                    self.overwrite(new)
-                else:
-                    assert False
-            else:
-                assert False
-            self.reduce_WHNF()
-        # end if self.tag is TAG.APPLICATION
-    # end def reduce_WHNF
-                    
-
-    def reduce_full(self):
-        self.reduce_WHNF()
-        for n in [self.functor, self.argument, self.body]:
-            if n is not None:
-                n.reduce_full()
-
-    def instantiate(self, substitutions):
-        """
-        Constructs a new instance of the graph starting at this node, making
-        replacements. substitutions is a list of pairs: if any node in the graph
-        being copied contains a reference to one of the first elements in
-        substitutions, it is replaced by a reference to the corresponding
-        second element.
-        """
-        for old, new in substitutions:
-            if self is old:
-                return new
-
-        if self.tag is TAG.APPLICATION:
-            # new application, instantiating the functor and argument
-            new_func = self.functor.instantiate(substitutions)
-            new_arg = self.argument.instantiate(substitutions)
-            if new_func is self.functor and new_arg is self.argument:
-                # if both children turned out to not need copying, we don't
-                # need to make a new application node
-                return self
-            else:
-                return Application(new_func, new_arg)
-        
-        elif self.tag is TAG.LAMBDA:
-            # new lambda, but as a lambda's parameter is represented by a
-            # reference to a param node, we need to make a new param node and
-            # make references in the body to the original lambda's parameter
-            # refer to the new parameter instead, as well as doing existing
-            # substitutions for the instantiation
-            new_param = Param()
-            new_subs = substitutions + [(self.param, new_param)]
-            new_body = self.body.instantiate(new_subs)
-            return Lambda(new_param, new_body)
-
-        else:
-            # no need to copy
-            return self
-
-            
 
 
 def Application(functor, argument):
     """
-    Helper function to make APPLICATION nodes
+    Helper function to make cells containing application nodes
     """
-    return Node(tag=TAG.APPLICATION, functor=functor, argument=argument)
+    return Cell(ApplicationNode(functor, argument))
 
 def Lambda(param, body):
     """
-    Helper function to make LAMBDA nodes;
+    Helper function to make cells containing lambda nodes
     """
-    return Node(tag=TAG.LAMBDA, body=body, param=param)
+    return Cell(LambdaNode(param, body))
 
 def Param():
     """
-    Helper function to make PARAMETER nodes, representing the formal parameters
-    of LAMBDA nodes. They contain no useful information at all except their
-    ability to be distinguished from one another by their id, really.
+    Helper function to make cells containing parameter nodes
     """
-    return Node(tag=TAG.PARAMETER)
+    return Cell(ParameterNode())
 
-def Value(intval=None, strval=None, wrapped_value=None):
-    """
-    Helper function to make VALUE nodes 
-    """
-    if wrapped_value is not None:
-        pass
-    elif intval is not None:
-        wrapped_value = W_Int(intval)
-    elif strval is not None:
-        wrapped_value = W_String(strval)
-    return Node(tag=TAG.VALUE, value=wrapped_value)
+#def ValueNode(intval=None, strval=None, charval=None):
+#    """
+#    Helper function to make the appropriate ValueNode for a python value
+#    """
+#    if intval is not None:
+#        return IntNode(intval)
+#    elif strval is not None:
+#        return StringNode(strval)
+#    elif charval is not None:
+#        return CharNode(charval)
+#    else:
+#        assert False
+
+def CharCell(c):
+    return Cell(CharNode(c))
+
+def IntCell(i):
+    return Cell(IntNode(i))
+
+def StrCell(s):
+    return Cell(StringNode(s))
 
 def Builtin(code, assoc=None, prec=None):
     """
     NOT_RPYTHON: Helper function to make BUILTIN nodes
     """
-    return Node(tag=TAG.BUILTIN, code=code, assoc=assoc, prec=prec,
-                num_params=code.func_code.co_argcount)
+    return Cell(BuiltinNode(code, code.func_code.co_argcount, assoc, prec))

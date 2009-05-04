@@ -1,151 +1,237 @@
 
-import re
-import sys
+from cell_graph import BuiltinNode, IntNode, StringNode,    \
+    CharNode, Cell
 
-import py
+from utils import Enum
 
-from cell_graph import Builtin, StringNode, CharNode, IntNode, ASSOC
+ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
+FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
+
+from context import Context, OperatorRecord
+
+class UnaryBuiltinNode(BuiltinNode):
+    def __init__(self, func, arg=None):
+        self.func = func
+
+    def apply(self, argument):
+        argument.reduce_WHNF()
+        return self.func(argument)
+
+    def instantiate(self, replace_this_cell, with_this_cell):
+        return self
 
 
+class BinaryBuiltinNode(BuiltinNode):
+    def __init__(self, func, arg1=None, arg2=None):
+        self.func = func
+        self.arg1 = arg1
+        self.arg2 = arg2
 
-# this moderately awful regexp is supposed to match one or more backslashes
-# at the end of a string, to be used in split_separator to tell whether a
-# separator was backslash-escaped
-end_slashes = re.compile(r'.*(?<!\\)(?P<slashes>(\\)+)$')
-def split_separator(line, sep):
+    def apply(self, argument):
+        if not self.arg1:
+            arg1 = argument
+            arg2 = self.arg2
+        elif not self.arg2:
+            arg1 = self.arg1
+            arg2 = argument
+        else:
+            assert False    # should be impossible
+
+        if arg1 and arg2:
+            # have enough arguments to apply the builtin, reduce them
+            # to make sure they are value nodes, then call self.func
+            arg1.reduce_WHNF()
+            arg2.reduce_WHNF()
+            return self.func(arg1, arg2)
+        else:
+            return BinaryBuiltinNode(self.func, arg1, arg2)
+
+    def instantiate(self, replace_this_cell, with_this_cell):
+        if self.arg1:
+            arg1 = self.arg1.instantiate(replace_this_cell, with_this_cell)
+        else:
+            arg1 = None
+        if self.arg2:
+            arg2 = self.arg2.instantiate(replace_this_cell, with_this_cell)
+        else:
+            arg2 = None
+
+        if arg1 is self.arg1 and arg2 is self.arg2:
+            return self     # no need to make a new copy
+        else:
+            return BinaryBuiltinNode(self.func, arg1, arg2)
+
+
+_types_dict = {'int': IntNode,
+               'string': StringNode,
+               'char': CharNode,
+              }
+
+def _get_typecheck_func(typ):
     """
-    Splits a string on a given separator that may be escaped by a backslash
-    (the backslash may also be escaped), returns a list of the split parts,
-    with any escaping backslashes removed (note that a sequence of backslashes
-    that does not occur before the separator is unmolested).
+    NOT_RPYTHON:
     """
-    parts = line.split(sep)
-    
-    # now have to find parts whose ends are escaped and join them to the next    
-    i = 0
-    while i < len(parts) - 1:
-        m = end_slashes.match(parts[i])
-        if m:
-            # need to replace the trailing sequence of slashes with half the
-            # number of slashes (rounded down), to account for backslash-escaped
-            # backslashes, and the rounding down (if the number was odd) removes
-            # the backslash that was escaping the separator
-            n_slashes = len(m.group('slashes'))
-            resolved_slashes = '\\' * (n_slashes // 2)
-            if n_slashes % 2 == 0:
-                parts[i] = parts[i][:-1 * n_slashes] + resolved_slashes
+    node_class = _types_dict[typ]
+    return lambda cell: isinstance(cell.node, node_class)
+
+
+def _get_extract_func(typ):
+    """
+    NOT_RPYTHON:
+    """
+    node_class = _types_dict[typ]
+    getter = getattr(node_class, 'get_' + typ)
+    return lambda cell: getter(cell.node)
+
+def _get_box_func(typ):
+    """
+    NOT_RPYTHON:
+    """
+    node_class = _types_dict[typ]
+    return lambda v: node_class(v)
+
+
+class OpTable(object):
+    """
+    NOT_RPYTHON:
+    """
+    def __init__(self):
+        self._db = {}
+
+    def op(self, name=None, arg_types=None, ret_type=None,
+           assoc=None, prec=None, fixity=None):
+        """
+        NOT_RPYTHON: returns a decorator that will make a builtin
+        node out of a function, and register it in the OpTable. The function
+        should operate on python level values; the decorator will wrap the
+        function in code to unbox and typecheck the arguments and box the
+        return result.
+        NOTE: the returned decorator is also not RPython, but the wrapper
+        function that it returns is, provided the function it is applied to is.
+        """
+        if isinstance(arg_types, str):
+            default_type = arg_types
+            arg_types = []
+        elif arg_types is None:
+            arg_types = []
+        
+        if ret_type is None:
+            ret_type = default_type
+            
+        
+        def decorator(func):
+            """
+            NOT_RPYTHON: 
+            """
+            num_params = func.func_code.co_argcount
+            if len(arg_types) < num_params:
+                _arg_types = arg_types + \
+                    [default_type] * (num_params - len(arg_types))
             else:
-                parts[i] = ''.join([parts[i][:-1 * n_slashes], resolved_slashes,
-                                    sep, parts[i + 1]])
-                del parts[i+1]
-        else:
-            i += 1
+                _arg_types = arg_types[:num_params]
 
-    return parts
+            box = _get_box_func(ret_type)
 
-return_types_dict = {'int': 'IntNode', 'str': 'StringNode', 'char':CharNode}
-def make_op(name, params, types, return_type, python_exp, assoc, prec):
-    """
-    Makes a builtin function and wraps it in a BUILTIN node.The generated
-    function automatically unwraps its arguments before passing them to the
-    given expression and wraps the returned value again.
-    
-    name        the name of the builtin
-    params      a list of the parameter names of the function
-    types       a list of the type names of the parameters
-    python_exp  a python expression using the parameters, but acting on
-                interp-level objects, not wrapped app-level objects
-    assoc       the associativity of the builtin operator
-    prec        the precedence of the builtin operator 
-    """
-    defstr = 'def op(%s):' % ', '.join(params)
-    convert = '\n'.join(['    %s = %s.%sval' % (arg, arg, typ)
-                         for arg, typ in zip(params, types)])
-    retstr = '    return %s(%s)' % (return_types_dict[return_type], python_exp)
-    
-    exec ('\n'.join([defstr, convert, retstr]))
-    
-    op.func_name = name
-    return Builtin(assoc=assoc, prec=prec, code=op)
-    
-
-def make_builtins_from_table(tablefilename):
-    """
-    NOT_RPYTHON: this function reads the builtin table format and makes the
-    appropriate function definitions (which manipulate wrapped objects rather
-    that python objects), creates a builtin node for each, and returns them
-    as a dictionary mapping builtin names to the builtin nodes
-    """
-    f = open(tablefilename)
-    lines = f.readlines()
-    f.close()
-    
-    d = {}
-    prec = sys.maxint // 2
-    blanks = 0
-    continuation = ''
-    for line in lines:
-        # handle lines ending with a \
-        if continuation:
-            line = continuation + line
-        if line.endswith('\\\n'):
-            continuation = line[:-2]
-            continue
-        else:
-            continuation = None
-        
-        # 3 or more blank lines in a row identifies a new priority class
-        if not line.strip():
-            blanks += 1
-            continue
-        else:
-            if blanks >= 3:
-                prec -= 1000000
-            blanks = 0
-        
-        # lines starting with a # are comments
-        if line.startswith('#'):
-            continue
-        
-        fundy_exp, rest = split_separator(line, '::')
-        type_exp, python_exp = split_separator(rest, '-->')
-        
-        # TODO: support more than just unary and binary-infix operators
-        parts = map(str.strip, fundy_exp.split())
-        if len(parts) == 3:
-            # binary infix operator
-            arg1, op, arg2 = map(str.strip, fundy_exp.split())
-            args = [arg1, arg2]
-            # TODO: more sophisticated associativity specification
-            if arg1 < arg2:
-                assoc = ASSOC.LEFT
+            # note: annoying _ names are to avoid making the outer variables
+            # inherited from OpTable.op be interpreted as locals by assigning
+            # to them
+            if name is None:
+                _name = func.func_name
             else:
-                assoc = ASSOC.RIGHT
-        elif len(parts) == 2 and len(parts[0]) == 1 and parts[0].islower():
-            # unary postfix operator
-            arg, op = parts
-            # TODO: allow unary operators to specify associativity
-            assoc = ASSOC.LEFT
-        elif len(parts) == 2 and len(parts[1]) == 1 and parts[1].islower():
-            # unary prefix operator
-            op, arg = parts
-            args = [arg1]
-            # TODO: allow unary operators to specify associativity
-            assoc = ASSOC.RIGHT
-        else:
-            assert False, "only unary operators and binary infix operators " \
-                          "supported at the moment"
-        
-        # TODO: support more complicated type expressions
-        types = map(str.strip, type_exp.split('->'))
-        return_type = types.pop()
-        
-        d[op] = make_op(op, args, types, return_type, python_exp, assoc, prec)
-    # end for line in lines
+                _name = name
+
+            if num_params == 1:
+                argcheck = _get_typecheck_func(_arg_types[0])
+                extract = _get_extract_func(_arg_types[0])
+
+                def wrapper(x):
+                    if argcheck(x):
+                        raw_ret = func(extract(x))
+                        ret = box(raw_ret)
+                        return ret
+                    else:
+                        raise TypeError     # TODO: proper exception here
+                # end def wrapper
+
+                wrapper.func_name = _name
+                cell = Cell(UnaryBuiltinNode(wrapper))
+                if fixity is None:
+                    _fixity = FIXITY.PREFIX
+
+            elif num_params == 2:
+                argcheck1, argcheck2 = map(_get_typecheck_func, _arg_types)
+                extract1, extract2 = map(_get_extract_func, _arg_types)
+
+                def wrapper(arg1, arg2):
+                    if argcheck1(arg1) and argcheck2(arg2):
+                        raw_ret = func(extract1(arg1), extract2(arg2))
+                        ret = box(raw_ret)
+                        return ret
+                    else:
+                        raise TypeError     # TODO: proper exception here
+                # end def wrapper
+
+                wrapper.func_name = _name
+                cell = Cell(BinaryBuiltinNode(wrapper))
+                if fixity is None:
+                    _fixity = FIXITY.INFIX
+
+            else:
+                raise NotImplementedError
+
+            if assoc is None:
+                _assoc = ASSOC.LEFT
+            else:
+                _assoc = assoc
+
+            if prec is None:
+                _prec = 0
+            else:
+                _prec = prec
+            
+            self.register_name(_name, cell, _assoc, _prec, _fixity)
+
+            return cell
+        # end def decorator
+
+        return decorator
+    # end def OpTable.op
+
+    def register_name(self, name, graph, assoc, prec, fixity):
+        record = OperatorRecord(graph, assoc, prec, fixity)
+        if not name in self._db:
+            self._db[name] = set()
+        self._db[name].add(record)
+
+    def make_context(self):
+        c = Context()
+        for name, recordset in self._db.items():
+            for r in recordset:
+                c.bind_operator(name, r.graph, r.assoc, r.prec, r.fixity)
+        return c
+
+
+ops = OpTable()
+
+@ops.op(name='+', arg_types='int', prec=0)
+def plus(x, y):
+    return x + y
+
+@ops.op(name='-', arg_types='int', prec=0)
+def plus(x, y):
+    return x - y
+
+@ops.op(name='*', arg_types='int', prec=10)
+def plus(x, y):
+    return x * y
+
+@ops.op(name='/', arg_types='int', prec=10)
+def plus(x, y):
+    return x // y
+
+@ops.op(arg_types='int', prec=20)
+def neg(x):
+    return -1 * x
+
+default_context = ops.make_context()
     
-    return d
-# end def make_builtins_from_table
-
-
-opsfile = py.magic.autopath().dirpath().join('fundy.ops').strpath
-default_context = make_builtins_from_table(opsfile)
