@@ -337,6 +337,12 @@ def Param():
     """
     return NodePtr(ParameterNode())
 
+def Cons(a, b):
+    """
+    Helper funciton to make pointers to new cons nodes
+    """
+    return NodePtr(ConsNode(a, b))
+
 
 def CharPtr(c):
     return NodePtr(CharNode(c))

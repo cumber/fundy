@@ -3,7 +3,7 @@
 IGNORE:     "[ \t]+|\\\n";
 
 NUMBER:     "[0-9]+";
-IDENT:      "[a-zA-Z_0-9+\-*/=!@$%\^&\|]+";
+IDENT:      "([a-zA-Z_][a-zA-Z_0-9]*)|([+\-*/=!@$%\^&\|]+)";
 STRING:     "\"([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}'\;:,.<>/\?`~]|\\\"|\\n|\\t|\\b|\\v|\\0|\\\\)*\"";
 CHAR:       "'([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}\"\;:,.<>/\?`~]|\\'|\\n|\\t|\\b|\\v|\\0|\\\\)'";
 LINEBREAK:  "\n[ \t\n]*";
@@ -28,6 +28,7 @@ show_statement:     ["show"] expr [LINEBREAK] ;
 # statements that bind names, which can be allowed inside a function
 bind_statement:     <def_statement>
     |               <assign_statement>
+    |               <type_statement>
     ;
 
 assign_statement:     IDENT ["="] expr [LINEBREAK] ;
@@ -42,6 +43,12 @@ param:  IDENT type_decl? ;
 
 type_decl:          ["::"] "type" ;
 
+
+type_statement:     ["type"] IDENT ["="] <constructor_list> [LINEBREAK] ;
+
+constructor_list:   constructor ( ["|"] constructor )* ;
+
+constructor:        IDENT IDENT* ;
 
 
 expr:   >chain< ;

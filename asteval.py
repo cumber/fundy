@@ -93,6 +93,22 @@ class Eval(RPythonVisitor):
         name = ident.additional_info
         self.context.bind(name, self.dispatch(expr))
 
+    def visit_type_statement(self, node):
+        type_name = self.dispatch(node.children[0])
+
+        # dispatch first data constructor
+        type_node = self.dispatch(node.children[1])
+
+        # dispatch any alternative data constructors, making the full type
+        # a union of them
+        for i in xrange(2, len(node.children)):
+            type_node = Cons(self.dispatch(node.children[i]), type_node)
+
+        self.context.bind(type_name, type_node)
+
+    def visit_constructor(self, node):
+        cons_name = self.dispatch(node.children[0])
+
     def visit_expr(self, node):
         graph_stack = []
         oper_stack = []
