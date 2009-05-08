@@ -21,9 +21,9 @@ io_statement:   <print_statement>
     |           <show_statement>
     ;
 
-print_statement:    ["print"]? expr [LINEBREAK] ;
+print_statement:    ["print"]? expr ( [","] expr )* [LINEBREAK] ;
 
-show_statement:     ["show"] expr [LINEBREAK] ;
+show_statement:     ["show"] ( expr ( [","] expr )* )? [LINEBREAK] ;
 
 # statements that bind names, which can be allowed inside a function
 bind_statement:     <def_statement>

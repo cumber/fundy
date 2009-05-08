@@ -1,6 +1,7 @@
 
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
 
+from utils import dotview
 from graph import      \
     IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param
 from builtin import ASSOC, default_context
@@ -33,10 +34,13 @@ class Eval(RPythonVisitor):
             print graph.node.to_string()
 
     def visit_show_statement(self, node):
-        self.visit_print_statement(node)
-        #for n in node.children:
-        #    graph = self.dispatch(n)
-        #    graph.view()
+        graphs = [self.dispatch(n) for n in node.children]
+        if graphs:
+            dotview(*graphs)
+        else:
+            # no arguments to show given; show entire context
+            dotview(self.context)
+
 
     def visit_def_statement(self, node):
         ident = node.children[0]
@@ -156,8 +160,11 @@ class Eval(RPythonVisitor):
         return IntPtr(int(node.additional_info))
 
     def visit_STRING(self, node):
-        return StrPtr(str(node.additional_info))
+        string = node.additional_info.strip('"')
+        return StrPtr(string)
 
     def visit_CHAR(self, node):
-        return CharPtr(str(node.additional_info))
+        char = node.additional_info.strip("'")
+        assert len(char) == 1
+        return CharPtr(char)
 
