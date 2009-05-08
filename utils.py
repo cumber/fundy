@@ -50,15 +50,14 @@ def dotview(*things):
     for thing in things:
         content.extend(thing.dot())
     content.append('}')
+    dotcode = '\n'.join(content)
 
-    import py
-    py.test.config.basetemp = py.path.local('/tmp')
+    from subprocess import Popen, PIPE
 
-    tmpfile = py.test.ensuretemp("fundy_graphs").join("tmp.dot")
-    tmpfile.write('\n'.join(content))
+    child = Popen(['python', 'xdot.py', '-'], stdin=PIPE)
+    child.stdin.write(dotcode)
+    child.stdin.close()
 
-    from dotviewer import graphclient
-    graphclient.display_dot_file(tmpfile.strpath, wait=False)
 
 
 def dict_to_params(d):
