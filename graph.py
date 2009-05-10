@@ -349,6 +349,17 @@ class BuiltinNode(Node):
         """
         return 'BUILTIN %s' % self.func.func_name
 
+    def dot(self):
+        """
+        NOT_RPYTHON:
+        """
+        # NOTE: here we depend on all descendent classes of BuiltinNode
+        # having a func member (which we could not do in RPython, unless they
+        # all had the same type). But this is Python, so we can just override
+        # this method anywhere the assumption doesn't hold.
+        yield dot_node(self.nodeid(), shape='ellipse', color='yellow',
+                       label=self.func.func_name)
+
 
 class ValueNode(Node):
     """
