@@ -75,12 +75,15 @@ class Context(object):
     #        records.append('%s:   %r') % name, graph.graph
     #    return '\n'.join(records)
 
-    def dot(self):
+    def dot(self, already_seen=None):
         """
         NOT_RPYTHON: Yield dot syntax for all bound names in the context.
         """
+        if already_seen is None:
+            already_seen = set()
+
         for name, record in self.graphs.items():
             yield dot_node(id(name), shape='ellipse', color='blue', label=name)
             yield dot_link(id(name), record.graph.nodeid())
-            for dot in record.graph.dot():
+            for dot in record.graph.dot(already_seen):
                 yield dot

@@ -63,11 +63,11 @@ class BinaryBuiltinNode(BuiltinNode):
         else:
             return BinaryBuiltinNode(self.func, arg1, arg2)
 
-    def dot(self):
+    def dot(self, already_seen=None):
         """
         NOT_RPYTHON:
         """
-        for dot in super(BinaryBuiltinNode, self).dot():
+        for dot in super(BinaryBuiltinNode, self).dot(already_seen):
             yield dot
 
         if self.arg1:
