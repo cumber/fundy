@@ -1,6 +1,7 @@
 
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
 
+import globals
 from utils import dotview
 from graph import      \
     IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param
@@ -33,13 +34,17 @@ class Eval(RPythonVisitor):
             # graph should now be a value node
             print graph.node.to_string()
 
-    def visit_show_statement(self, node):
-        graphs = [self.dispatch(n) for n in node.children]
-        if graphs:
-            dotview(*graphs)
-        else:
-            # no arguments to show given; show entire context
-            dotview(self.context)
+    if not globals.setup_for_translation:
+        def visit_show_statement(self, node):
+            """
+            NOT_RPYTHON:
+            """
+            graphs = [self.dispatch(n) for n in node.children]
+            if graphs:
+                dotview(*graphs)
+            else:
+                # no arguments to show given; show entire context
+                dotview(self.context)
 
 
     def visit_def_statement(self, node):

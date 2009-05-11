@@ -6,9 +6,30 @@ from pypy.rlib.parsing.lexer import Lexer, Token, SourcePos
 import py
 import sys
 
+# globals is not actually used here directly but needed in the environment
+# to allow #!if directives in the grammar file to access it.
+import globals
+
 
 grammarfile = py.magic.autopath().dirpath().join('fundy.grammar')
-grammar = grammarfile.read(mode='U')
+lines = []
+skipdepth = 0
+for line in grammarfile.readlines():
+    if skipdepth is not 0:
+        if line.startswith('#!endif'):
+            skipdepth -= 1
+        continue    # we're in a false #!if, keep going
+
+    if line.startswith('#!if '):
+        condition = line.lstrip('#!if ').strip()
+        if not eval(condition):
+            skipdepth += 1
+        continue
+
+    lines.append(line)
+# end for
+
+grammar = '\n'.join(lines)
 
 try:
     regexes, rules, ToAST = parse_ebnf(grammar)
