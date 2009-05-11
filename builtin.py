@@ -2,7 +2,7 @@
 from graph import BuiltinNode, IntNode, StringNode,    \
     CharNode, NodePtr
 
-from utils import Enum
+from utils import Enum, dot_node, dot_link
 
 ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
 FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
@@ -62,6 +62,27 @@ class BinaryBuiltinNode(BuiltinNode):
             return self     # no need to make a new copy
         else:
             return BinaryBuiltinNode(self.func, arg1, arg2)
+
+    def dot(self):
+        """
+        NOT_RPYTHON:
+        """
+        for dot in super(BinaryBuiltinNode, self).dot():
+            yield dot
+
+        if self.arg1:
+            for dot in self.arg1.dot():
+                yield dot
+            yield dot_link(self.nodeid(), self.arg1.nodeid(),
+                           color='blue', label='1')
+
+        if self.arg2:
+            for dot in self.arg2.dot():
+                yield dot
+            yield dot_link(self.nodeid(), self.arg2.nodeid(),
+                           color='blue', label='2')
+
+# end class BinaryBuiltinNode
 
 
 _types_dict = {'int': IntNode,

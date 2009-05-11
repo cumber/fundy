@@ -33,3 +33,47 @@ class Enum(object):
                 ', '.join([repr(k)
                            for k in self.__dict__ 
                            if isinstance(getattr(self, k), EnumVal)])
+
+
+# some utility functions used for the dot-viewer capabilities, which cannot
+# be used from the translated interpreter at the moment, so these functions
+# do not have to be RPython
+def dotview(*things):
+    """
+    NOT_RPYTHON: Displays graphs using PyGame.
+
+    Expects all arguments to have a dot() method defined, which should be a
+    generator yielding lines of dot format graph syntax. The dot() methods
+    need not be RPython.
+    """
+    content = ["digraph G{"]
+    for thing in things:
+        content.extend(thing.dot())
+    content.append('}')
+    dotcode = '\n'.join(content)
+
+    from subprocess import Popen, PIPE
+
+    child = Popen(['python', 'xdot.py', '-'], stdin=PIPE)
+    child.stdin.write(dotcode)
+    child.stdin.close()
+
+
+
+def dict_to_params(d):
+    """
+    NOT_RPYTHON: Render a dict as a comma separated string: key="value"
+    """
+    return ', '.join(['%s="%s"' % key_value for key_value in d.items()])
+
+def dot_node(node_id, **params):
+    """
+    NOT_RPYTHON: Render a dot node.
+    """
+    return '"%s" [%s];' % (node_id, dict_to_params(params))
+
+def dot_link(from_id, to_id, **params):
+    """
+    NOT_RPYTHON: Render a dot link.
+    """
+    return '"%s" -> "%s" [%s];' % (from_id, to_id, dict_to_params(params))

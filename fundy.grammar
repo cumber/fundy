@@ -18,12 +18,15 @@ statement:  <io_statement>
 
 # statements that do IO, and therefore cannot be allowed inside a function
 io_statement:   <print_statement>
+#!if not globals.setup_for_translation
+    # this statement is only implemented when we are running untranslated
     |           <show_statement>
+#!endif
     ;
 
-print_statement:    ["print"]? expr [LINEBREAK] ;
+print_statement:    ["print"]? expr ( [","] expr )* [LINEBREAK] ;
 
-show_statement:     ["show"] expr [LINEBREAK] ;
+show_statement:     ["show"] ( expr ( [","] expr )* )? [LINEBREAK] ;
 
 # statements that bind names, which can be allowed inside a function
 bind_statement:     <def_statement>

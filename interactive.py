@@ -53,6 +53,10 @@ class FundyConsole(object):
             else:
                 more = self.push(line)
 
+        # status code
+        # TODO: make more informative
+        return 0
+
     def push(self, line):
         self.buffer.append(line)
         source = "\n".join(self.buffer)
@@ -112,9 +116,9 @@ class FundyConsole(object):
 
 
 
-def main():
+def main(argv):
     interp = FundyConsole()
-    interp.interact()
+    return interp.interact()
 
 
 if __name__ == '__main__':
