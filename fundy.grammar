@@ -47,7 +47,7 @@ param:  IDENT type_decl? ;
 type_decl:          ["::"] "type" ;
 
 
-type_statement:     ["type"] IDENT ["="] <constructor_list> [LINEBREAK] ;
+type_statement:     ["type"] IDENT ["="] >constructor_list< [LINEBREAK] ;
 
 constructor_list:   constructor ( ["|"] constructor )* ;
 

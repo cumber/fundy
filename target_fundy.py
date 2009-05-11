@@ -8,7 +8,7 @@ translation process.
 # correct value of this global, in case any different action needs to be taken
 # when translating than when running on top of CPython.
 import globals
-gloabls.setup_for_translation = True
+globals.setup_for_translation = True
 
 # This is the funciton that will act as the entry point of the translated
 # executable.

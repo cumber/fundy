@@ -4,7 +4,8 @@ from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
 import globals
 from utils import dotview
 from graph import      \
-    IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param
+    IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param, Cons, \
+    Unit, ConsNode
 from builtin import ASSOC, default_context
 
 
@@ -103,20 +104,44 @@ class Eval(RPythonVisitor):
         self.context.bind(name, self.dispatch(expr))
 
     def visit_type_statement(self, node):
-        type_name = self.dispatch(node.children[0])
+        ident = node.children[0]
+        assert isinstance(ident, Symbol)
+        name = ident.additional_info
 
-        # dispatch first data constructor
-        type_node = self.dispatch(node.children[1])
+        # dispatch data constructors
+        constructors = [self.dispatch(node.children[i])
+                        for i in range(1, len(node.children))]
 
-        # dispatch any alternative data constructors, making the full type
-        # a union of them
-        for i in xrange(2, len(node.children)):
-            type_node = Cons(self.dispatch(node.children[i]), type_node)
+        # type object is then a cons tree of the alternatives
+        type_node = ConsNode.make_tree(constructors)
 
-        self.context.bind(type_name, type_node)
+        self.context.bind(name, type_node)
 
     def visit_constructor(self, node):
-        cons_name = self.dispatch(node.children[0])
+        ident = node.children[0]
+        assert isinstance(ident, Symbol)
+        name = ident.additional_info
+
+        if len(node.children) == 1:
+            # no-argument constructor, just bind it to unit
+            constructor = Unit()
+        else:
+            # until record types are implemented, we don't actually care
+            # about the names of the constructor arguments, only the number
+            param_nodes = [Param() for i in range(1, len(node.children))]
+            body = ConsNode.make_tree(param_nodes)
+
+            # build the lambda nodes in reverse order, as each contains the next
+            param_nodes.reverse()
+            for param in param_nodes:
+                body = Lambda(param, body)
+
+            # now body is the top level lambda node
+            constructor = body
+
+        # now bind the name to the constructor
+        self.context.bind(name, constructor)
+        return constructor
 
     def visit_expr(self, node):
         graph_stack = []

@@ -376,6 +376,24 @@ class ConsNode(ValueNode):
         self.a = a
         self.b = b
 
+    @staticmethod
+    def make_tree(leaves):
+        """
+        Return a (pointer to) a tree of Cons nodes with the given leaves.
+
+        The elements of leaves must be NodePtrs. This function will always
+        generate trees with the same "shape" for the same number of inputs.
+        i.e. make_tree(a1, a2, ... aN) and make_tree(b1, b2, ... bN) will put
+        a1 and b1 in analagous positions, etc.
+        """
+        if len(leaves) == 1:
+            return leaves[0]
+        else:
+            pivot = len(leaves) / 2
+            left = leaves[:pivot]
+            right = leaves[pivot:]
+            return Cons(ConsNode.make_tree(left), ConsNode.make_tree(right))
+
 ConsNode.add_instantiate_fn('a', 'b')
 ConsNode.add_dot_fn(dict(shape='box', label='cons'),
                     a=dict(label='a'),
@@ -398,6 +416,12 @@ class PrimitiveNode(ValueNode):
         statically determined by the class.
         """
         yield dot_node(self.nodeid(), shape='box', label=self.to_string())
+
+class UnitNode(PrimitiveNode):
+    def to_string(self):
+        return "void"
+
+    to_repr = to_string
 
 class StringNode(PrimitiveNode):
     def __init__(self, value):
@@ -462,6 +486,8 @@ def Cons(a, b):
     """
     return NodePtr(ConsNode(a, b))
 
+def Unit():
+    return NodePtr(UnitNode())
 
 def CharPtr(c):
     return NodePtr(CharNode(c))
