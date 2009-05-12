@@ -1,6 +1,6 @@
 
 from graph import BuiltinNode, IntNode, StringNode,    \
-    CharNode, NodePtr
+    CharNode, UnitNode, BoolNode, NodePtr
 
 from utils import Enum, dot_node, dot_link
 
@@ -8,6 +8,18 @@ ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
 FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
 
 from context import Context, OperatorRecord
+
+
+# make some predefined constants: since fundy is lazy, these nodes should be
+# able to be reused for all occurrences of their types
+predefined_unit_node = UnitNode()
+predefined_unit = NodePtr(predefined_unit_node)
+
+predefined_true_node = BoolNode(True)
+predefined_true = NodePtr(predefined_true_node)
+predefined_false_node = BoolNode(False)
+predefined_false = NodePtr(predefined_false_node)
+
 
 class UnaryBuiltinNode(BuiltinNode):
     def __init__(self, func, arg=None):
@@ -88,6 +100,7 @@ class BinaryBuiltinNode(BuiltinNode):
 _types_dict = {'int': IntNode,
                'string': StringNode,
                'char': CharNode,
+               'bool': BoolNode,
               }
 
 def _get_typecheck_func(typ):
@@ -106,10 +119,20 @@ def _get_extract_func(typ):
     getter = getattr(node_class, 'get_' + typ)
     return lambda ptr: getter(ptr.node)
 
+def _box_bool(v):
+    if v:
+        return predefined_true_node
+    else:
+        return predefined_false_node
+
 def _get_box_func(typ):
     """
     NOT_RPYTHON:
     """
+    if typ == 'bool':
+        # bool treated differently to ensure we reuse the same predefined
+        # true and false nodes, rather than keep creating new ones
+        return _box_bool
     node_class = _types_dict[typ]
     return lambda v: node_class(v)
 
@@ -256,5 +279,18 @@ def plus(x, y):
 def neg(x):
     return -1 * x
 
+@ops.op(name='and', arg_types='bool', prec=-10)
+def bool_and(x, y):
+    return x and y
+
+@ops.op(name='or', arg_types='bool', prec=-10)
+def bool_or(x, y):
+    return x or y
+
+
 default_context = ops.make_context()
 
+# now include the predefined constants
+default_context.bind(predefined_unit.node.to_string(), predefined_unit)
+default_context.bind(predefined_true.node.to_string(), predefined_true)
+default_context.bind(predefined_false.node.to_string(), predefined_false)

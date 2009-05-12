@@ -5,8 +5,8 @@ import globals
 from utils import dotview
 from graph import      \
     IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param, Cons, \
-    Unit, ConsNode
-from builtin import ASSOC, default_context
+    ConsNode
+from builtin import ASSOC, default_context, predefined_unit
 
 
 class Eval(RPythonVisitor):
@@ -124,7 +124,7 @@ class Eval(RPythonVisitor):
 
         if len(node.children) == 1:
             # no-argument constructor, just bind it to unit
-            constructor = Unit()
+            constructor = predefined_unit
         else:
             # until record types are implemented, we don't actually care
             # about the names of the constructor arguments, only the number
@@ -213,4 +213,3 @@ class Eval(RPythonVisitor):
         char = node.additional_info.strip("'")
         assert len(char) == 1
         return CharPtr(char)
-

@@ -491,6 +491,18 @@ class IntNode(PrimitiveNode):
 
     to_repr = to_string
 
+class BoolNode(PrimitiveNode):
+    def __init__(self, value):
+        self.boolval = value
+
+    def to_string(self):
+        return str(self.boolval)
+
+    def get_bool(self):
+        return self.boolval
+
+    to_repr = to_string
+
 
 
 def Application(functor, argument):
@@ -516,9 +528,6 @@ def Cons(a, b):
     Helper funciton to make pointers to new cons nodes
     """
     return NodePtr(ConsNode(a, b))
-
-def Unit():
-    return NodePtr(UnitNode())
 
 def CharPtr(c):
     return NodePtr(CharNode(c))
