@@ -151,7 +151,7 @@ class Node(object):
 
         if self not in already_seen:
             already_seen.add(self)
-            yield dot_node(self.nodeid(), shape='ellipse',
+            yield dot_node(self.nodeid(), shape='tripleoctagon',
                            label='UNRENDERABLE', color='red')
 
     @classmethod
@@ -293,8 +293,8 @@ class ApplicationNode(Node):
 
 ApplicationNode.add_instantiate_fn('functor', 'argument')
 ApplicationNode.add_dot_fn(dict(shape='ellipse', label='apply'),
-                           functor=dict(color='blue', label='f'),
-                           argument=dict(color='green', label='a'))
+                           functor=dict(color='red', label='f'),
+                           argument=dict(color='cyan', label='a'))
 
 class LambdaNode(Node):
     def __init__(self, parameter, body):
@@ -330,8 +330,8 @@ def outer_instantiate(self, replace_this_ptr, with_this_ptr):
 LambdaNode.instantiate = outer_instantiate
 
 LambdaNode.add_dot_fn(dict(shape='octagon', label='lambda'),
-                      parameter=dict(color='yellow', label='p'),
-                      body=dict(color='red'))
+                      parameter=dict(color='blue', label='p'),
+                      body=dict(color='green'))
 
 
 class ParameterNode(Node):
@@ -379,7 +379,7 @@ class BuiltinNode(Node):
         # this method anywhere the assumption doesn't hold.
         if self not in already_seen:
             already_seen.add(self)
-            yield dot_node(self.nodeid(), shape='ellipse', color='yellow',
+            yield dot_node(self.nodeid(), shape='octagon', color='green',
                            label=self.func.func_name)
 
 
@@ -421,9 +421,9 @@ class ConsNode(ValueNode):
             return Cons(ConsNode.make_tree(left), ConsNode.make_tree(right))
 
 ConsNode.add_instantiate_fn('a', 'b')
-ConsNode.add_dot_fn(dict(shape='box', label='cons'),
-                    a=dict(label='a'),
-                    b=dict(label='b'))
+ConsNode.add_dot_fn(dict(shape='box', color='navy', label='cons'),
+                    a=dict(color='purple', label='a'),
+                    b=dict(color='purple', label='b'))
 
 
 class PrimitiveNode(ValueNode):
@@ -446,7 +446,8 @@ class PrimitiveNode(ValueNode):
 
         if self not in already_seen:
             already_seen.add(self)
-            yield dot_node(self.nodeid(), shape='box', label=self.to_string())
+            yield dot_node(self.nodeid(), color='purple', shape='box',
+                           label=self.to_string())
 
 class UnitNode(PrimitiveNode):
     def to_string(self):

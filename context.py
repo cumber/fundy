@@ -83,7 +83,7 @@ class Context(object):
             already_seen = set()
 
         for name, record in self.graphs.items():
-            yield dot_node(id(name), shape='ellipse', color='blue', label=name)
-            yield dot_link(id(name), record.graph.nodeid())
+            yield dot_node(id(name), shape='box', color='blue', label=name)
+            yield dot_link(id(name), record.graph.nodeid(), color='blue')
             for dot in record.graph.dot(already_seen):
                 yield dot
