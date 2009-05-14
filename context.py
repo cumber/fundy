@@ -1,5 +1,4 @@
 
-from utils import dot_node, dot_link
 from builtin import ASSOC, FIXITY
 
 
@@ -66,24 +65,9 @@ class Context(object):
     def get_fixity(self, name):
         return self.graphs[name].get_fixity()
 
-    #def __repr__(self):
-    #    """
-    #    NOT_RPYTHON
-    #    """
-    #    records = []
-    #    for name, graph in self.graphs.items():
-    #        records.append('%s:   %r') % name, graph.graph
-    #    return '\n'.join(records)
-
-    def dot(self, already_seen=None):
+    def items(self):
         """
-        NOT_RPYTHON: Yield dot syntax for all bound names in the context.
+        NOT_RPYTHON:
         """
-        if already_seen is None:
-            already_seen = set()
-
-        for name, record in self.graphs.items():
-            yield dot_node(id(name), shape='box', color='blue', label=name)
-            yield dot_link(id(name), record.graph.nodeid(), color='blue')
-            for dot in record.graph.dot(already_seen):
-                yield dot
+        for name in self.graphs:
+            yield name, self.lookup(name)

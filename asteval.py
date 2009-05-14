@@ -2,12 +2,28 @@
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
 
 import globals
-from utils import dotview
+from utils import dotview, LabelledGraph
 from graph import      \
     IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param, Cons, \
     ConsNode
 from builtin import ASSOC, default_context, predefined_unit
 
+
+def _visit_show_statement(self, node):
+    """
+    NOT_RPYTHON: Visually display the argument expressions as graphs.
+
+    The show statement is for debugging/educational purposes, and the current
+    implementation can only be used when running Fundy on top of CPython.
+    Therefore this function is conditionally added as a method of the Eval
+    class below, being excluded if we are setting up for low-level translation.
+    """
+    lgs = [LabelledGraph(self, astexpr=n) for n in node.children]
+    if not lgs:
+        # no arguments to show given; show entire context
+        lgs = [LabelledGraph(self, graph=g, label=n)
+               for (n, g) in self.context.items()]
+    dotview(*lgs)
 
 class Eval(RPythonVisitor):
     """
@@ -36,16 +52,7 @@ class Eval(RPythonVisitor):
             print graph.node.to_string()
 
     if not globals.setup_for_translation:
-        def visit_show_statement(self, node):
-            """
-            NOT_RPYTHON:
-            """
-            graphs = [self.dispatch(n) for n in node.children]
-            if graphs:
-                dotview(*graphs)
-            else:
-                # no arguments to show given; show entire context
-                dotview(self.context)
+        visit_show_statement = _visit_show_statement
 
 
     def visit_def_statement(self, node):
