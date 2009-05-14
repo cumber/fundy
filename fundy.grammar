@@ -29,20 +29,21 @@ print_statement:    ["print"]? expr ( [","] expr )* [LINEBREAK] ;
 show_statement:     ["show"] ( expr ( [","] expr )* )? [LINEBREAK] ;
 
 # statements that bind names, which can be allowed inside a function
-bind_statement:     <def_statement>
-    |               <assign_statement>
+bind_statement:     <assign_statement>
     |               <type_statement>
     ;
 
-assign_statement:     IDENT ["="] expr [LINEBREAK] ;
+# the short form binds an expression to a name
+# the def keyword form does the same thing, but the expression is replaced by
+# a block, which returns an expression after an arbitrary number of local
+# definitions
+assign_statement:   IDENT param* ["="] expr [LINEBREAK]
+    |               ["def"] IDENT param* [LINEBREAK] block [LINEBREAK]
+    ;
 
-# the def statement defines a function and binds it to a name
-def_statement:      ["def"] IDENT param* type_decl? [LINEBREAK]
-                    block [LINEBREAK] ;
+param:              IDENT ;
 
-block:      bind_statement* ["return"] expr ;
-
-param:  IDENT type_decl? ;
+block:              bind_statement* ["return"] expr ;
 
 type_decl:          ["::"] "type" ;
 

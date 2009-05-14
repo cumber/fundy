@@ -1,5 +1,5 @@
 
-from pypy.rlib.parsing.tree import RPythonVisitor, Symbol
+from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
 import globals
 from utils import dotview, LabelledGraph
@@ -55,39 +55,38 @@ class Eval(RPythonVisitor):
         visit_show_statement = _visit_show_statement
 
 
-    def visit_def_statement(self, node):
+    def visit_assign_statement(self, node):
         ident = node.children[0]
+        block = node.children[-1]
+
+        # This is slightly wacky: RPython can only use negative slices for the
+        # special case x[:-1]. For both x[1:-1] and x[1:len(x)-1] the annotator
+        # complains about not being able to prove the slice stop non-negative.
+        params = node.children[:-1]
+        params.pop(0)
+
         assert isinstance(ident, Symbol)
         name = ident.additional_info
 
-        n = 1
-        params = []
-        while node.children[n].symbol == 'param':
-            params.append(node.children[n])
-            n += 1
+        # create a scope for the function's parameters and local variables
+        local_scope = Eval(self.context)
 
-        if node.children[n].symbol == 'type_decl':
-            type_decl, block = node.children[n:]
-        else:
-            block = node.children[n]
-            type_decl = None
+        # bind the name in the original scope
+        self.context.bind(name, local_scope.make_lambda_chain(params, block))
 
+    def make_lambda_chain(self, params, body):
+        # Helper for visit_assign_statement. Dispatches each of params in order,
+        # (binding names to Param nodes if they are param nonterminals as
+        # expected), before dispatching the body (which will usually need the
+        # names of the params to be bound). Returns chain of lambda nodes, each
+        # containing the next as its body, with the body of the last being the
+        # dispatched body passed in. Much easier to write this recursively than
+        # using loops in-line in the body of visit_assign_statement.
         if params:
-            sub_eval = Eval(self.context)
-            param_nodes = [sub_eval.dispatch(p) for p in params]
-            body = sub_eval.dispatch(block)
-
-            # build the lambda nodes in reverse order, as each contains the next
-            param_nodes.reverse()
-            for param in param_nodes:
-                body = Lambda(param, body)
-
-            # now body is the top level lambda node
-            self.context.bind(name, body)
+            param = self.dispatch(params[0])
+            return Lambda(param, self.make_lambda_chain(params[1:], body))
         else:
-            # no parameters, so we don't need a lambda node at all, just bind
-            # the name to the expression returned by evaluating the body
-            self.context.bind(name, self.dispatch(block))
+            return self.dispatch(body)
 
     def visit_param(self, node):
         new_param = Param()
@@ -103,12 +102,6 @@ class Eval(RPythonVisitor):
         for i in xrange(len(node.children) - 1):
             self.dispatch(node.children[i])
         return self.dispatch(node.children[-1])
-
-    def visit_assign_statement(self, node):
-        ident, expr = node.children
-        assert isinstance(ident, Symbol)
-        name = ident.additional_info
-        self.context.bind(name, self.dispatch(expr))
 
     def visit_type_statement(self, node):
         ident = node.children[0]
