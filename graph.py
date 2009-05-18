@@ -1,5 +1,5 @@
 
-from utils import dot_node, dot_link
+from utils import dot_node, dot_link, rset
 
 class NodePtr(object):
     """
@@ -17,6 +17,9 @@ class NodePtr(object):
     """
     def __init__(self, node):
         self.node = node
+
+    def add_type(self, typeptr):
+        self.node.add_type(typeptr)
 
     def nodeid(self):
         """
@@ -104,6 +107,9 @@ class Node(object):
 
     Nodes should have NodePtr data members, not refer directly to other Nodes.
     """
+    def __init__(self):
+        self.types = rset()
+
     def nodeid(self):
         """
         Return a unique identifier for this node.
@@ -136,6 +142,9 @@ class Node(object):
     def to_string(self):
         raise NotImplementedError
 
+    def add_type(self, typeptr):
+        self.types.add(typeptr)
+
     def repr(self, toplevel=True):
         """
         NOT_RPYTHON:
@@ -153,6 +162,8 @@ class Node(object):
             already_seen.add(self)
             yield dot_node(self.nodeid(), shape='tripleoctagon',
                            label='UNRENDERABLE', color='red')
+            for dot in self.dot_types(already_seen):
+                yield dot
 
     @classmethod
     def add_instantiate_fn(cls, *attr_names):
@@ -212,6 +223,20 @@ class Node(object):
         cls.instantiate = instantiate
     # end def add_instantiate_fn
 
+    def dot_types(self, already_seen=None):
+        """
+        NOT_RPYTHON:
+        """
+        if already_seen is None:
+            already_seen = set()
+
+        for typeptr in self.types:
+            yield dot_link(self.nodeid(), typeptr.nodeid(),
+                           color='cyan', style='dashed')
+            for dot in typeptr.dot(already_seen):
+                yield dot
+
+
     @classmethod
     def add_dot_fn(cls, self_spec, **attrs):
         """
@@ -225,6 +250,9 @@ class Node(object):
                 for each attr:
                     yield render of link to attr (with various parameters)
                     yield whatever attr.dot() yields
+                for each type:
+                    yield render of link to type
+                    yield whaever type.dot() yields
 
         self_spec should be a dictionary of parameters for the graph node to be
         rendered for nodes of this class: color (note US spelling!), shape, etc.
@@ -238,7 +266,7 @@ class Node(object):
 
         class FOO:
             ...
-        FOO.add_dot_fn(dict(...), attr2=dict(...), ..., attrN=dict(...))
+        FOO.add_dot_fn(dict(...), attr1=dict(...), ..., attrN=dict(...))
 
         This function is not RPython, and the methods it creates do not have to
         be RPython at the moment either, as actually viewing the dot files that
@@ -267,6 +295,10 @@ class Node(object):
                     for thing in attr_val.dot(already_seen):
                         yield thing
 
+                for dot in self.dot_types(already_seen):
+                    yield dot
+        # end def dot
+
         cls.dot = dot
     # end def add_dot_fn
 # end class Node
@@ -274,6 +306,7 @@ class Node(object):
 
 class ApplicationNode(Node):
     def __init__(self, functor, argument):
+        Node.__init__(self)
         self.functor = functor
         self.argument = argument
 
@@ -298,6 +331,7 @@ ApplicationNode.add_dot_fn(dict(shape='ellipse', label='apply'),
 
 class LambdaNode(Node):
     def __init__(self, parameter, body):
+        Node.__init__(self)
         self.parameter = parameter
         self.body = body
 
@@ -338,9 +372,8 @@ class ParameterNode(Node):
     # used in __repr__ of ParameterNode, should not be needed by translation
     _param_dict = {}
 
-    def __init__(self):
-        pass    # parameter nodes don't actually hold any information other than
-                # their identity
+    # parameter nodes don't actually hold any information other than
+    # their identity, so there's no __init__ function
 
     def instantiate(self, replace_this_ptr, with_this_ptr):
         # parameters have no children, so do not need to make a copy as it will
@@ -360,6 +393,9 @@ ParameterNode.add_dot_fn(dict(shape='octagon', label='param', color='blue'))
 
 
 class BuiltinNode(Node):
+    def __init__(self):
+        Node.__init__(self)
+
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
@@ -381,6 +417,8 @@ class BuiltinNode(Node):
             already_seen.add(self)
             yield dot_node(self.nodeid(), shape='octagon', color='green',
                            label=self.func.func_name)
+            for dot in self.dot_types(already_seen):
+                yield dot
 
 
 class ValueNode(Node):
@@ -395,6 +433,7 @@ class ConsNode(ValueNode):
     Cons node contains two other nodes. (pointers!)
     """
     def __init__(self, a, b):
+        Node.__init__(self)
         self.a = a
         self.b = b
 
@@ -427,6 +466,9 @@ ConsNode.add_dot_fn(dict(shape='box', color='navy', label='cons'),
 
 
 class PrimitiveNode(ValueNode):
+    def __init__(self):
+        Node.__init__(self)
+
     def instantiate(self, replace_this_ptr, with_this_ptr):
         return self
 
@@ -448,6 +490,17 @@ class PrimitiveNode(ValueNode):
             already_seen.add(self)
             yield dot_node(self.nodeid(), color='purple', shape='box',
                            label=self.to_string())
+            for dot in self.dot_types(already_seen):
+                yield dot
+
+class EmptyValueNode(PrimitiveNode):
+    """
+    Represents a value that contains no information other than its identity.
+    """
+    def to_string(self):
+        return "void"
+
+    to_repr = to_string
 
 class UnitNode(PrimitiveNode):
     def to_string(self):
@@ -492,19 +545,6 @@ class IntNode(PrimitiveNode):
 
     to_repr = to_string
 
-class BoolNode(PrimitiveNode):
-    def __init__(self, value):
-        self.boolval = value
-
-    def to_string(self):
-        return str(self.boolval)
-
-    def get_bool(self):
-        return self.boolval
-
-    to_repr = to_string
-
-
 
 def Application(functor, argument):
     """
@@ -526,15 +566,12 @@ def Param():
 
 def Cons(a, b):
     """
-    Helper funciton to make pointers to new cons nodes
+    Helper function to make pointers to new cons nodes.
     """
     return NodePtr(ConsNode(a, b))
 
-def CharPtr(c):
-    return NodePtr(CharNode(c))
-
-def IntPtr(i):
-    return NodePtr(IntNode(i))
-
-def StrPtr(s):
-    return NodePtr(StringNode(s))
+def EmptyValue():
+    """
+    Helper function to make pointers to new empty value nodes.
+    """
+    return NodePtr(EmptyValueNode())

@@ -35,6 +35,43 @@ class Enum(object):
                            if isinstance(getattr(self, k), EnumVal)])
 
 
+class rset(object):
+    """
+    An RPython implementation of sets.
+
+    XXX: Currently the internal representation is a hacky deferral to a
+    dictionary with all values being None.
+
+    XXX: Currently the program can only make use of a single type of rset.
+    """
+    def __init__(self, elems=[]):
+        self._store = {}
+        for e in elems:
+            self._store[e] = None
+
+    def __contains__(self, elem):
+        return elem in self._store
+    contains = __contains__
+
+    def add(self, elem):
+        self._store[elem] = None
+
+    def list(self):
+        ret = []
+        for k in self._store:
+            ret.append(k)
+        return ret
+
+    def __iter__(self):
+        return self._store.iterkeys()
+
+    def __repr__(self):
+        """
+        NOT_RPYTHON:
+        """
+        return '{' + ', '.join(map(repr, self._store.keys())) + '}'
+
+
 # some utility functions used for the dot-viewer capabilities, which cannot
 # be used from the translated interpreter at the moment, so these functions
 # do not have to be RPython

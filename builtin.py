@@ -1,296 +1,138 @@
 
-from graph import BuiltinNode, IntNode, StringNode,    \
-    CharNode, UnitNode, BoolNode, NodePtr
-
-from utils import Enum, dot_node, dot_link
-
-ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
-FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
-
+from graph import NodePtr, PrimitiveNode, EmptyValue
+from utils import rset
 from context import Context, OperatorRecord
 
 
-# make some predefined constants: since fundy is lazy, these nodes should be
-# able to be reused for all occurrences of their types
-predefined_unit_node = UnitNode()
-predefined_unit = NodePtr(predefined_unit_node)
+default_context = Context()
 
-predefined_true_node = BoolNode(True)
-predefined_true = NodePtr(predefined_true_node)
-predefined_false_node = BoolNode(False)
-predefined_false = NodePtr(predefined_false_node)
+#---------------------------#
+# builtin type objects      #
+#---------------------------#
+
+# type is a weird object; it is its own type
+_type = EmptyValue()
+_type.add_type(_type)
+default_context.bind('type', _type)
+
+def _make_primitive_type(name):
+    tmp = EmptyValue()
+    tmp.add_type(_type)
+    default_context.bind(name, tmp)
+    return tmp
+
+def _make_primitive_types(*names):
+    return map(_make_primitive_type, names)
+
+int_type, char_type, str_type = _make_primitive_types('int', 'char', 'string')
+
+# The unit and bool types are special; instances of them are not constructed
+# at runtime, they already exist.
+def _make_enum_type(overall_type_name, *constructor_names):
+    overall_type = _make_primitive_type(overall_type_name)
+    constructors = _make_primitive_types(*constructor_names)
+    for c in constructors:
+        c.add_type(overall_type)
+    return [overall_type] + constructors
+
+unit_type, unit = _make_enum_type('unittype', 'unit')
+bool_type, bool_false, bool_true = _make_enum_type('bool', 'false', 'true')
 
 
-class UnaryBuiltinNode(BuiltinNode):
-    def __init__(self, func, arg=None):
-        self.func = func
+class IntNode(PrimitiveNode):
+    def __init__(self, value):
+        PrimitiveNode.__init__(self)
+        self.types.add(int_type)
+        self.intval = value
 
-    def apply(self, argument):
-        argument.reduce_WHNF_inplace()
-        return self.func(argument)
+    def to_string(self):
+        return str(self.intval)
 
-    def instantiate(self, replace_this_ptr, with_this_ptr):
-        return self
+    def get_int(self):
+        return self.intval
 
+    @staticmethod
+    def get_type():
+        return int_type
 
-class BinaryBuiltinNode(BuiltinNode):
-    def __init__(self, func, arg1=None, arg2=None):
-        self.func = func
-        self.arg1 = arg1
-        self.arg2 = arg2
-
-    def apply(self, argument):
-        if not self.arg1:
-            arg1 = argument
-            arg2 = self.arg2
-        elif not self.arg2:
-            arg1 = self.arg1
-            arg2 = argument
-        else:
-            assert False    # should be impossible
-
-        if arg1 and arg2:
-            # have enough arguments to apply the builtin, reduce them
-            # to make sure they are value nodes, then call self.func
-            arg1.reduce_WHNF_inplace()
-            arg2.reduce_WHNF_inplace()
-            return self.func(arg1, arg2)
-        else:
-            return BinaryBuiltinNode(self.func, arg1, arg2)
-
-    def instantiate(self, replace_this_ptr, with_this_ptr):
-        if self.arg1:
-            arg1 = self.arg1.get_instantiated_node_ptr(replace_this_ptr,
-                                                       with_this_ptr)
-        else:
-            arg1 = None
-        if self.arg2:
-            arg2 = self.arg2.get_instantiated_node_ptr(replace_this_ptr,
-                                                       with_this_ptr)
-        else:
-            arg2 = None
-
-        if arg1 is self.arg1 and arg2 is self.arg2:
-            return self     # no need to make a new copy
-        else:
-            return BinaryBuiltinNode(self.func, arg1, arg2)
-
-    def dot(self, already_seen=None):
+    @staticmethod
+    def make_getter():
         """
         NOT_RPYTHON:
         """
-        for dot in super(BinaryBuiltinNode, self).dot(already_seen):
-            yield dot
+        return lambda i: getattr(i, 'intval')
 
-        if self.arg1:
-            for dot in self.arg1.dot():
-                yield dot
-            yield dot_link(self.nodeid(), self.arg1.nodeid(),
-                           color='blue', label='1')
+    to_repr = to_string
 
-        if self.arg2:
-            for dot in self.arg2.dot():
-                yield dot
-            yield dot_link(self.nodeid(), self.arg2.nodeid(),
-                           color='blue', label='2')
+class CharNode(PrimitiveNode):
+    def __init__(self, value):
+        assert len(value) == 1
+        PrimitiveNode.__init__(self)
+        self.types.add(char_type)
+        self.charval = value
 
-# end class BinaryBuiltinNode
+    def to_string(self):
+        return self.charval
 
+    get_char = to_string
 
-_types_dict = {'int': IntNode,
-               'string': StringNode,
-               'char': CharNode,
-               'bool': BoolNode,
-              }
+    @staticmethod
+    def get_type():
+        return char_type
 
-def _get_typecheck_func(typ):
-    """
-    NOT_RPYTHON:
-    """
-    node_class = _types_dict[typ]
-    return lambda ptr: isinstance(ptr.node, node_class)
+    @staticmethod
+    def make_getter():
+        """
+        NOT_RPYTHON:
+        """
+        return lambda c: getattr(c, 'charval')
 
+    def to_repr(self):
+        return repr(self.strval)
 
-def _get_extract_func(typ):
-    """
-    NOT_RPYTHON:
-    """
-    node_class = _types_dict[typ]
-    getter = getattr(node_class, 'get_' + typ)
-    return lambda ptr: getter(ptr.node)
+class StringNode(PrimitiveNode):
+    def __init__(self, value):
+        PrimitiveNode.__init__(self)
+        self.types.add(str_type)
+        self.strval = value
 
-def _box_bool(v):
-    if v:
-        return predefined_true_node
+    def to_string(self):
+        return self.strval
+
+    get_string = to_string
+
+    @staticmethod
+    def get_type():
+        return str_type
+
+    @staticmethod
+    def make_getter():
+        """
+        NOT_RPYTHON:
+        """
+        return lambda s: getattr(s, 'strval')
+
+    def to_repr(self):
+        return repr(self.strval)
+
+def IntPtr(i):
+    return NodePtr(IntNode(i))
+
+def CharPtr(c):
+    return NodePtr(CharNode(c))
+
+def StrPtr(s):
+    return NodePtr(StringNode(s))
+
+def BoolPtr(b):
+    if b:
+        return bool_true
     else:
-        return predefined_false_node
+        return bool_false
 
-def _get_box_func(typ):
-    """
-    NOT_RPYTHON:
-    """
-    if typ == 'bool':
-        # bool treated differently to ensure we reuse the same predefined
-        # true and false nodes, rather than keep creating new ones
-        return _box_bool
-    node_class = _types_dict[typ]
-    return lambda v: node_class(v)
+def UnitPtr():
+    return unit
 
 
-class OpTable(object):
-    """
-    NOT_RPYTHON:
-    """
-    def __init__(self):
-        self._db = {}
-
-    def op(self, name=None, arg_types=None, ret_type=None,
-           assoc=None, prec=None, fixity=None):
-        """
-        NOT_RPYTHON: returns a decorator that will make a builtin
-        node out of a function, and register it in the OpTable. The function
-        should operate on python level values; the decorator will wrap the
-        function in code to unbox and typecheck the arguments and box the
-        return result.
-        NOTE: the returned decorator is also not RPython, but the wrapper
-        function that it returns is, provided the function it is applied to is.
-        """
-        if isinstance(arg_types, str):
-            default_type = arg_types
-            arg_types = []
-        elif arg_types is None:
-            arg_types = []
-
-        if ret_type is None:
-            ret_type = default_type
-
-
-        def decorator(func):
-            """
-            NOT_RPYTHON: 
-            """
-            num_params = func.func_code.co_argcount
-            if len(arg_types) < num_params:
-                _arg_types = arg_types + \
-                    [default_type] * (num_params - len(arg_types))
-            else:
-                _arg_types = arg_types[:num_params]
-
-            box = _get_box_func(ret_type)
-
-            # note: annoying _ names are to avoid making the outer variables
-            # inherited from OpTable.op be interpreted as locals by assigning
-            # to them
-            if name is None:
-                _name = func.func_name
-            else:
-                _name = name
-
-            if num_params == 1:
-                argcheck = _get_typecheck_func(_arg_types[0])
-                extract = _get_extract_func(_arg_types[0])
-
-                def wrapper(x):
-                    if argcheck(x):
-                        raw_ret = func(extract(x))
-                        ret = box(raw_ret)
-                        return ret
-                    else:
-                        raise TypeError     # TODO: proper exception here
-                # end def wrapper
-
-                wrapper.func_name = _name
-                ptr = NodePtr(UnaryBuiltinNode(wrapper))
-                if fixity is None:
-                    _fixity = FIXITY.PREFIX
-
-            elif num_params == 2:
-                argcheck1, argcheck2 = map(_get_typecheck_func, _arg_types)
-                extract1, extract2 = map(_get_extract_func, _arg_types)
-
-                def wrapper(arg1, arg2):
-                    if argcheck1(arg1) and argcheck2(arg2):
-                        raw_ret = func(extract1(arg1), extract2(arg2))
-                        ret = box(raw_ret)
-                        return ret
-                    else:
-                        raise TypeError     # TODO: proper exception here
-                # end def wrapper
-
-                wrapper.func_name = _name
-                ptr = NodePtr(BinaryBuiltinNode(wrapper))
-                if fixity is None:
-                    _fixity = FIXITY.INFIX
-
-            else:
-                raise NotImplementedError
-
-            if assoc is None:
-                _assoc = ASSOC.LEFT
-            else:
-                _assoc = assoc
-
-            if prec is None:
-                _prec = 0
-            else:
-                _prec = prec
-
-            self.register_name(_name, ptr, _assoc, _prec, _fixity)
-
-            return ptr
-        # end def decorator
-
-        return decorator
-    # end def OpTable.op
-
-    def register_name(self, name, graph, assoc, prec, fixity):
-        record = OperatorRecord(graph, assoc, prec, fixity)
-        if not name in self._db:
-            self._db[name] = set()
-        self._db[name].add(record)
-
-    def make_context(self):
-        c = Context()
-        for name, recordset in self._db.items():
-            for r in recordset:
-                c.bind_operator(name, r.graph, r.assoc, r.prec, r.fixity)
-        return c
-
-
-ops = OpTable()
-
-@ops.op(name='+', arg_types='int', prec=0)
-def plus(x, y):
-    return x + y
-
-@ops.op(name='-', arg_types='int', prec=0)
-def plus(x, y):
-    return x - y
-
-@ops.op(name='*', arg_types='int', prec=10)
-def plus(x, y):
-    return x * y
-
-@ops.op(name='/', arg_types='int', prec=10)
-def plus(x, y):
-    return x // y
-
-@ops.op(arg_types='int', prec=20)
-def neg(x):
-    return -1 * x
-
-@ops.op(name='and', arg_types='bool', prec=-10)
-def bool_and(x, y):
-    return x and y
-
-@ops.op(name='or', arg_types='bool', prec=-10)
-def bool_or(x, y):
-    return x or y
-
-
-default_context = ops.make_context()
-
-# now include the predefined constants
-default_context.bind(predefined_unit.node.to_string(), predefined_unit)
-default_context.bind(predefined_true.node.to_string(), predefined_true)
-default_context.bind(predefined_false.node.to_string(), predefined_false)
+from pyops import pyops_context
+default_context.update(pyops_context)

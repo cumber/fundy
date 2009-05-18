@@ -3,10 +3,9 @@ from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
 import globals
 from utils import dotview, LabelledGraph
-from graph import      \
-    IntPtr, CharPtr, StrPtr, Application, BuiltinNode, Lambda, Param, Cons, \
-    ConsNode
-from builtin import ASSOC, default_context, predefined_unit
+from graph import Application, BuiltinNode, Lambda, Param, Cons, ConsNode
+from builtin import default_context, IntPtr, CharPtr, StrPtr, unit
+from pyops import ASSOC
 
 
 def _visit_show_statement(self, node):
@@ -124,7 +123,7 @@ class Eval(RPythonVisitor):
 
         if len(node.children) == 1:
             # no-argument constructor, just bind it to unit
-            constructor = predefined_unit
+            constructor = unit
         else:
             # until record types are implemented, we don't actually care
             # about the names of the constructor arguments, only the number

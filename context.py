@@ -1,7 +1,4 @@
 
-from builtin import ASSOC, FIXITY
-
-
 class SimpleRecord(object):
     def __init__(self, graph):
         self.graph = graph
@@ -14,6 +11,12 @@ class SimpleRecord(object):
 
     def get_fixity(self):
         assert False
+
+    def __repr__(self):
+        """
+        NOT_RPYTHON:
+        """
+        return repr(self.graph)
 
 
 class OperatorRecord(SimpleRecord):
@@ -32,6 +35,12 @@ class OperatorRecord(SimpleRecord):
     def get_fixity(self):
         return self.fixity
 
+    def __repr__(self):
+        """
+        NOT_RPYTHON:
+        """
+        return '<%r, %r, %r> %r' % (self.assoc, self.prec, self.fixity,
+                                    self.graph)
 
 
 class Context(object):
@@ -71,3 +80,15 @@ class Context(object):
         """
         for name in self.graphs:
             yield name, self.lookup(name)
+
+    def update(self, other):
+        self.graphs.update(other.graphs)
+
+    def __repr__(self):
+        """
+        NOT_RPYTHON:
+        """
+        names = sorted(self.graphs.keys())
+        lines = ['%s -> %r' % (name, self.graphs[name])
+                 for name in sorted(self.graphs.keys())]
+        return '\n'.join(lines)
