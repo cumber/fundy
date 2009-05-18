@@ -98,7 +98,8 @@ class TypeTable(object):
 
     def add_simple_type(self, name, nodeclass):
         self.boxfuncs[name] = lambda v: nodeclass(v)
-        self.extractfuncs[name] = lambda v: nodeclass.make_getter()(v.node)
+        getter = nodeclass.make_getter()
+        self.extractfuncs[name] = lambda v: getter(v.node)
         self.typecheckfuncs[name] = \
             lambda v: v.node.types.contains(nodeclass.get_type())
 
