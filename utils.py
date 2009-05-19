@@ -1,5 +1,5 @@
 
-from pypy.rlib.objectmodel import CDefinedIntSymbolic
+from pypy.rlib.objectmodel import CDefinedIntSymbolic, r_dict
 
 
 class EnumVal(CDefinedIntSymbolic):
@@ -44,8 +44,8 @@ class rset(object):
 
     XXX: Currently the program can only make use of a single type of rset.
     """
-    def __init__(self, elems=[]):
-        self._store = {}
+    def __init__(self, key_eq, key_hash, elems=[]):
+        self._store = r_dict(key_eq, key_hash)
         for e in elems:
             self._store[e] = None
 

@@ -18,6 +18,19 @@ class NodePtr(object):
     def __init__(self, node):
         self.node = node
 
+    # XXX: The eq and hash methods need to be defined for passing to r_dict
+    # in the construction of each node's rset to hold NodePtrs of the node's
+    # types. They are defined so that two NodePtrs pointing to the same node
+    # will be considered the "same" NodePtr. The reason for not using the
+    # special names __eq__ and __hash__ is that RPython does not understand
+    # these special methods, which would introduce a subtle behavioural
+    # difference between the translated and untranslated interpreters.
+    def eq(self, other):
+        return self.node is other.node
+
+    def hash(self):
+        return hash(self.node)
+
     def add_type(self, typeptr):
         self.node.add_type(typeptr)
 
@@ -108,7 +121,7 @@ class Node(object):
     Nodes should have NodePtr data members, not refer directly to other Nodes.
     """
     def __init__(self):
-        self.types = rset()
+        self.types = rset(NodePtr.eq, NodePtr.hash)
 
     def nodeid(self):
         """
