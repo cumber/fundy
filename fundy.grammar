@@ -8,9 +8,11 @@ STRING:     "\"([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}'\;:,.<>/\?`~]|\\\"|\\n|
 CHAR:       "'([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}\"\;:,.<>/\?`~]|\\'|\\n|\\t|\\b|\\v|\\0|\\\\)'";
 LINEBREAK:  "\n[ \t\n]*";
 MISSING:    "\?[a-zA-Z_0-9+\-*/=!@$%\&\|\?]+";
+TERM:       ";";
+BEGIN:      ":";
 
 
-program:    [LINEBREAK]? (statement [LINEBREAK])* statement? [EOF] ;
+program:    [TERM]* statement* [TERM]* [EOF] ;
 
 statement:  <io_statement>
     |       <bind_statement>
@@ -24,9 +26,9 @@ io_statement:   <print_statement>
 #!endif
     ;
 
-print_statement:    ["print"]? expr ( [","] expr )* [LINEBREAK] ;
+print_statement:    ["print"]? expr ( [","] expr )* [TERM] ;
 
-show_statement:     ["show"] ( expr ( [","] expr )* )? [LINEBREAK] ;
+show_statement:     ["show"] ( expr ( [","] expr )* )? [TERM] ;
 
 # statements that bind names, which can be allowed inside a function
 bind_statement:     <assign_statement>
@@ -37,18 +39,18 @@ bind_statement:     <assign_statement>
 # the def keyword form does the same thing, but the expression is replaced by
 # a block, which returns an expression after an arbitrary number of local
 # definitions
-assign_statement:   IDENT param* ["="] expr [LINEBREAK]
-    |               ["def"] IDENT param* [LINEBREAK] block [LINEBREAK]
+assign_statement:   IDENT param* ["="] expr [TERM]
+    |               ["def"] IDENT param* block [TERM]
     ;
 
 param:              IDENT ;
 
-block:              bind_statement* ["return"] expr ;
+block:              [BEGIN] bind_statement* ["return"] expr [TERM] ;
 
 type_decl:          ["::"] "type" ;
 
 
-type_statement:     ["type"] IDENT ["="] >constructor_list< [LINEBREAK] ;
+type_statement:     ["type"] IDENT ["="] >constructor_list< [TERM] ;
 
 constructor_list:   constructor ( ["|"] constructor )* ;
 
@@ -61,11 +63,16 @@ term:   <IDENT>
     |   <MISSING>
     |   <literal>
     |   <paren>
+#    |   <typeswitch>
     ;
 
 paren:  "(" <expr> ")" ;
 
 chain:  term+;
+
+#typeswitch: ["typeswitch"] expr [":"] <switchcase>+ ;
+
+switchcase: ["is"] expr ;
 
 literal:    <NUMBER>
     |       <list>
@@ -76,7 +83,7 @@ literal:    <NUMBER>
 
 list:   [ "[" ] ( expr ( [","] expr )* tail? )? [ "]" ] ;
 
-tail:   [ ":" ] expr ;
+tail:   [ BEGIN ] expr ;
 
 tuple:  ["{"] ( expr ( [","] expr )+ )? ["}"]
     |   ["{"] expr [","] ["}"]
