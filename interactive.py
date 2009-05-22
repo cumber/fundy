@@ -3,23 +3,18 @@ import sys
 
 from pypy.rlib.parsing.parsing import ParseError
 from pypy.rlib.parsing.deterministic import LexerError
-from pypy.rlib.streamio import DiskFile, construct_stream_tower
+from pypy.rlib.streamio import open_file_as_stream, fdopen_as_stream
 
 from asteval import Eval
 from fundyparse import parse
 from version import version_numbers
 
-# use __stdin__ etc rather than stdin so it works in IDLE too
-stdin_fd = DiskFile(sys.__stdin__.fileno())
-stdout_fd = DiskFile(sys.__stdout__.fileno())
-stderr_fd = DiskFile(sys.__stderr__.fileno())
-
-stdin_stream = construct_stream_tower(stdin_fd, buffering=1, universal=True,
-        reading=True, writing=False, binary=False)
-stdout_stream = construct_stream_tower(stdout_fd, buffering=1, universal=True,
-        reading=False, writing=True, binary=False)
-stderr_stream = construct_stream_tower(stderr_fd, buffering=0, universal=True,
-        reading=False, writing=True, binary=False)
+# Use __stdin__ etc rather than stdin so it works in IDLE too, although you
+# have to interact with Fundy through the terminal that started IDLE, rather
+# than IDLE's gui window.
+stdin_stream = fdopen_as_stream(sys.__stdin__.fileno(), "rU", buffering=1)
+stdout_stream = fdopen_as_stream(sys.__stdout__.fileno(), "wU", buffering=1)
+stderr_stream = fdopen_as_stream(sys.__stderr__.fileno(), "wU", buffering=0)
 
 
 class FundyConsole(object):
@@ -60,7 +55,7 @@ class FundyConsole(object):
     def push(self, line):
         self.buffer.append(line)
         source = "\n".join(self.buffer)
-        more = self.runsource(source, self.filename)
+        more = self.runsource(source)
         if not more:
             self.resetbuffer()
         return more
@@ -84,6 +79,11 @@ class FundyConsole(object):
         try:
             tree = parse(source + '\n')
         except ParseError, e:
+            # HACK: If there are more def's than returns, or more open
+            # parentheses than closed, then presume the parse error is because
+            # of that and return None signalling that more input is required.
+            # This allows such constructs to naturally be entered over several
+            # lines interactively.
             if source.count('def') > source.count('return') or      \
                source.count('(') > source.count(')'):
                 return None
@@ -93,14 +93,14 @@ class FundyConsole(object):
         # no exception
         return tree
 
-    def runsource(self, source, filename="<input>"):
+    def runsource(self, source):
         try:
             tree = self.compile(source)
         except LexerError, e:
-            self.write(e.nice_error_message(filename=filename))
+            self.write(e.nice_error_message(filename=self.filename) + '\n')
         except ParseError, e:
-            self.write(e.nice_error_message(filename=filename,
-                                            source=source))
+            self.write(e.nice_error_message(filename=self.filename,
+                                            source=source) + '\n')
         else:
             if tree is None:
                 return True     # incomplete input
@@ -117,8 +117,28 @@ class FundyConsole(object):
 
 
 def main(argv):
-    interp = FundyConsole()
-    return interp.interact()
+    if len(argv) > 1:
+        # argv[0] is the executable name
+        scriptname = argv[1]
+
+        try:
+            stream = open_file_as_stream(scriptname, mode="rU")
+            try:
+                source = stream.readall()
+            finally:
+                stream.close()
+        except OSError, e:
+            stderr_stream.write('Error reading file "%s" (errno: %d)\n'
+                                % (scriptname, e.errno))
+            return 1
+
+        interp = FundyConsole(scriptname)
+        interp.runsource(source)
+
+        return 0
+    else:
+        interp = FundyConsole()
+        return interp.interact()
 
 
 if __name__ == '__main__':
