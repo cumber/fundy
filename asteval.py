@@ -1,28 +1,11 @@
 
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
-import globals
-from utils import dotview, LabelledGraph
+from utils import dotview, LabelledGraph, preparer
 from graph import Application, BuiltinNode, Lambda, Param, Cons, ConsNode
 from builtin import default_context, IntPtr, CharPtr, StrPtr, unit
 from pyops import ASSOC
 
-
-def _visit_show_statement(self, node):
-    """
-    NOT_RPYTHON: Visually display the argument expressions as graphs.
-
-    The show statement is for debugging/educational purposes, and the current
-    implementation can only be used when running Fundy on top of CPython.
-    Therefore this function is conditionally added as a method of the Eval
-    class below, being excluded if we are setting up for low-level translation.
-    """
-    lgs = [LabelledGraph(self, astexpr=n) for n in node.children]
-    if not lgs:
-        # no arguments to show given; show entire context
-        lgs = [LabelledGraph(self, graph=g, label=n)
-               for (n, g) in self.context.items()]
-    dotview(*lgs)
 
 class Eval(RPythonVisitor):
     """
@@ -50,8 +33,58 @@ class Eval(RPythonVisitor):
             # graph should now be a value node
             print graph.node.to_string()
 
-    if not globals.setup_for_translation:
-        visit_show_statement = _visit_show_statement
+    def visit_show_statement(self, node):
+        # See the docstrings of the following two methods for explanation.
+        return self.__hack__real_visit_show_statement(node)
+
+    def __hack__real_visit_show_statement(self, node):
+        """
+        NOT_RPYTHON: Visually display the argument expressions as graphs.
+
+        The show statement is for debugging/educational purposes, and the
+        current implementation can only be used when running Fundy on top of
+        CPython.
+        """
+        lgs = [LabelledGraph(self, astexpr=n) for n in node.children]
+        if not lgs:
+            # no arguments to show given; show entire context
+            lgs = [LabelledGraph(self, graph=g, label=n)
+                   for (n, g) in self.context.items()]
+        dotview(*lgs)
+
+    @classmethod
+    def _fix_for_translation(cls, for_translation):
+        """
+        NOT_RPYTHON: The show statement is not implemented in an RPython-safe
+        way, and cannot be used when running translated. This method patches
+        the class' visit_show_statement method to do nothing, or to do its real
+        job.
+
+        NOTE: We go about the patching strangely. The visit_show_statement
+        method cannot simply be deleted, because the important thing is not
+        whether the method exists on the class, but whether it exists in the
+        dispatch table that is generated from the class dictionary by the
+        metaclass of the RPythonVisitor base class. Even though it will never
+        be called when the grammar does not include the show statement, the
+        translator cannot prove this, and so tries to analyse it.
+
+        The dispatch table is stored in a local variable of the function that
+        generated the dispatch method, so is essentially impossible to access.
+        We could regenerate the dispatch table, but that is difficult,
+        introduces unnecessary dependancies on the internals of the
+        RPythonVisitor implementation, and seems like overkill.
+
+        Therefore, visit_show_statement must be untouched, and forwards to
+        __hack__real_visit_show_statement, which we CAN alter here. It must
+        exist, but we replace it with a do nothing method when preparing for
+        translation.
+        """
+        if for_translation:
+            cls.__hack__real_visit_show_statement = lambda self, node: None
+        else:
+            cls.__hack__real_visit_show_statement = cls.__secret_backup
+
+    __secret_backup = visit_show_statement
 
 
     def visit_assign_statement(self, node):
@@ -212,3 +245,10 @@ class Eval(RPythonVisitor):
         char = node.additional_info.strip("'")
         assert len(char) == 1
         return CharPtr(char)
+
+# end class Eval
+
+
+# Register a funciton that switches between translation mode and CPython mode.
+preparer.register(Eval._fix_for_translation)
+

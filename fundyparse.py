@@ -1,21 +1,23 @@
 
+import py
+import sys
+
 from pypy.rlib.parsing.ebnfparse import parse_ebnf, check_for_missing_names
 from pypy.rlib.parsing.parsing import PackratParser, ParseError
 from pypy.rlib.parsing.lexer import Lexer, Token, SourcePos
 
-import py
-import sys
+from utils import preparer
 
 
-def get_grammar():
+def get_grammar(for_translation):
     """
     NOT_RPYTHON: This function is only called to process the grammarfile, which
     occurs before translation, so it does not need to be RPython.
-    """
-    # globals is not actually used here directly but needed in the environment
-    # to allow #!if directives in the grammar file to access it.
-    import globals
 
+    The for_translation argument should be True if the grammar should be built
+    for translating the Fundy interpreter to low level code, or False for
+    running on top of CPython.
+    """
     grammarfile = py.magic.autopath().dirpath().join('fundy.grammar')
     lines = []
     skipdepth = 0
@@ -45,10 +47,10 @@ def get_grammar():
     return regexes, rules, ToAST
 
 
-# similar to ebnfparse.make_parse_function, but accepts a function to
+# Similar to ebnfparse.make_parse_function, but accepts a function to
 # run the lexer's token stream through before passing it to the parser,
-# and a list of extra names that are added by the post-processing stage
-def make_messy_parse_function(res, rules, eof=False, post_lexer=None,
+# and a list of extra names that are added by the post-processing stage.
+def make_messy_parse_function(regexes, rules, eof=False, post_lexer=None,
                               extra_names=()):
     """
     NOT_RPYTHON: This function is only called to process the grammarfile, which
@@ -57,13 +59,13 @@ def make_messy_parse_function(res, rules, eof=False, post_lexer=None,
     The parse function it returns parses Fundy code into a "messy" AST, which
     can be cleaned up using the ToAST object obtained from parse_ebnf(grammar).
     """
-    names, res = zip(*res)
+    names, regexes = zip(*regexes)
     if "IGNORE" in names:
         ignore = ["IGNORE"]
     else:
         ignore = []
-    check_for_missing_names(names + extra_names, res, rules)
-    lexer = Lexer(list(res), list(names), ignore=ignore)
+    check_for_missing_names(names + extra_names, regexes, rules)
+    lexer = Lexer(list(regexes), list(names), ignore=ignore)
     parser = PackratParser(rules, rules[0].nonterminal)
     def parse(s):
         tokens = lexer.tokenize(s, eof=eof)
@@ -153,14 +155,14 @@ def process_indentation(tokens):
 # end def process_indentation
 
 
-def make_parse_function():
+def make_parse_function(for_translation):
     """
     Convenience function. Goes the whole way from reading the grammar file to
     building a function that parses Fundy code into the sort of AST that the
     asteval module expects. Not called at runtime, so it does not need to be
     RPython, but the function it returns is.
     """
-    regexes, rules, ToAST = get_grammar()
+    regexes, rules, ToAST = get_grammar(for_translation)
     messy_parse = make_messy_parse_function(regexes, rules, eof=True,
                                             post_lexer=process_indentation)
     tidyer = ToAST()
@@ -172,9 +174,56 @@ def make_parse_function():
 
     return parse
 
-# Here we actually build the RPython parsing function that can be imported
-# from this module. Yay!
-parse = make_parse_function()
+
+class __SecretParser(object):
+    def __init__(self):
+        """
+        NOT_RPYTHON: This class exists to encapsulate the state of the parser,
+        which can either be in translated mode or untranslated mode, since the
+        show statement can only be supported when running on top of CPython.
+
+        The parse function exported from this module calls out to an instance
+        of this class, allowing other modules to be ignorant of the fact that
+        this is parameterised on whether we're translating or not. Although
+        this class is not RPython in its entirety (because the process of
+        building a parser is not), when analyzing the parse method the
+        appropriate parse function will already be built.
+
+        I'm reasonably sure the if statement in the parse method will not
+        appear in the translated interpreter either (nor will two copies of
+        the parse function and grammar), since self.for_translation will be
+        a constant from the point of view of the translator?
+        """
+        self.for_translation = False
+        self.setup(self.for_translation)
+
+    def setup(self, for_translation):
+        """
+        NOT_RPYTHON:
+        """
+        self.for_translation = for_translation
+        if for_translation:
+            attr = 'translated_parse'
+        else:
+            attr = 'untranslated_parse'
+
+        if getattr(self, attr, None) is None:
+            setattr(self, attr, make_parse_function(for_translation))
+
+    def parse(self, code):
+        if self.for_translation:
+            return self.translated_parse(code)
+        else:
+            return self.untranslated_parse(code)
+
+
+__secret_parser_state = __SecretParser()
+preparer.register(__secret_parser_state.setup)
+
+# This is the actual parse function that other modules can import from here.
+# (finally!)
+def parse(code):
+    return __secret_parser_state.parse(code)
 
 
 def show_parse(code):

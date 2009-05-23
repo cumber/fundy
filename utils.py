@@ -175,3 +175,16 @@ class LabelledGraph(object):
         else:
             return node.additional_info.replace('"', '\\"')
 
+
+class FundyPreparer(object):
+    def __init__(self):
+        self.preparation_funcs = []
+
+    def register(self, preparation_func):
+        self.preparation_funcs.append(preparation_func)
+
+    def prepare(self, for_translation):
+        for func in self.preparation_funcs:
+            func(for_translation)
+
+preparer = FundyPreparer()
