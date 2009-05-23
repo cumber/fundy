@@ -187,4 +187,9 @@ class FundyPreparer(object):
         for func in self.preparation_funcs:
             func(for_translation)
 
+# This object can be imported from any module and used to register a function
+# that should be called to switch backand forth between translated and
+# untranslated modes. This allows debugging of the code that gets translated
+# without actually translating it.
+# If necessary this could be extended in future with other parameters.
 preparer = FundyPreparer()
