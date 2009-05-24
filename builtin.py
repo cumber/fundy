@@ -1,5 +1,5 @@
 
-from graph import NodePtr, PrimitiveNode, EmptyValue
+from graph import NodePtr, PrimitiveNode, LabelledValue
 from utils import rset
 from context import Context, OperatorRecord
 
@@ -11,12 +11,12 @@ default_context = Context()
 #---------------------------#
 
 # type is a weird object; it is its own type
-_type = EmptyValue()
+_type = LabelledValue('type')
 _type.add_type(_type)
 default_context.bind('type', _type)
 
 def _make_primitive_type(name):
-    tmp = EmptyValue()
+    tmp = LabelledValue(name)
     tmp.add_type(_type)
     default_context.bind(name, tmp)
     return tmp

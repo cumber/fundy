@@ -93,8 +93,7 @@ class Snippet(object):
 
 test_int_arith = Snippet('print 1 + 2 * 3 - 4', '3').make_tests()
 
-test_bool = Snippet('print true and false', 'true').make_tests(
-    xfail="bools don't print yet")
+test_bool = Snippet('print true and false', 'false').make_tests()
 
 test_var = Snippet('''
 x = 3 - 8

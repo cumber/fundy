@@ -540,55 +540,19 @@ class PrimitiveNode(ValueNode):
             for dot in self.dot_types(already_seen):
                 yield dot
 
-class EmptyValueNode(PrimitiveNode):
+class LabelledValueNode(PrimitiveNode):
     """
     Represents a value that contains no information other than its identity.
     """
-    def to_string(self):
-        return "void"
-
-    to_repr = to_string
-
-class UnitNode(PrimitiveNode):
-    def to_string(self):
-        return "void"
-
-    to_repr = to_string
-
-class StringNode(PrimitiveNode):
-    def __init__(self, value):
-        self.strval = value
+    def __init__(self, name=None):
+        PrimitiveNode.__init__(self)
+        self.name = name
 
     def to_string(self):
-        return self.strval
-
-    get_string = to_string
-
-    def to_repr(self):
-        return repr(self.strval)
-
-class CharNode(PrimitiveNode):
-    def __init__(self, value):
-        assert len(value) == 1
-        self.charval = value
-
-    def to_string(self):
-        return self.charval
-
-    get_char = to_string
-
-    def to_repr(self):
-        return repr(self.strval)
-
-class IntNode(PrimitiveNode):
-    def __init__(self, value):
-        self.intval = value
-
-    def to_string(self):
-        return str(self.intval)
-
-    def get_int(self):
-        return self.intval
+        if self.name:
+            return self.name
+        else:
+            return "<void>"
 
     to_repr = to_string
 
@@ -623,8 +587,8 @@ def Cons(a, b):
     """
     return NodePtr(ConsNode(a, b))
 
-def EmptyValue():
+def LabelledValue(name=None):
     """
     Helper function to make pointers to new empty value nodes.
     """
-    return NodePtr(EmptyValueNode())
+    return NodePtr(LabelledValueNode(name))
