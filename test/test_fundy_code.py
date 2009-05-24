@@ -163,3 +163,20 @@ unit
 char
 string
 ''').make_tests()
+
+test_typeswitch2 = Snippet('''
+typeswitch 3:
+    case int return "int"
+
+print 8
+
+z = typeswitch 9:
+    case int return "another int"
+
+print z
+''',
+'''
+int
+8
+another int
+''').make_tests()

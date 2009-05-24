@@ -168,12 +168,25 @@ class LabelledGraph(object):
             frags = []
             for n in node.children:
                 if n.symbol == 'expr':
-                    frags.append('(%s)' % make_label(n))
+                    frags.append('(%s)' % LabelledGraph.make_label(n))
                 else:
                     frags.append(LabelledGraph.make_label(n))
             return ' '.join(frags)
-        else:
+        elif node.symbol == 'typeswitch':
+            expr = node.children[0]
+            cases = node.children[1:]
+            frags = ['typeswitch %s:'
+                     % LabelledGraph.make_label(expr)]
+            for case in cases:
+                # All n should be switchcase with 2 children
+                frags.append('case %s return %s'
+                             % (LabelledGraph.make_label(case.children[0]),
+                                LabelledGraph.make_label(case.children[1])))
+            return '\\n'.join(frags)
+        elif hasattr(node, 'additional_info'):
             return node.additional_info.replace('"', '\\"')
+        else:
+            return node.symbol
 
 
 class FundyPreparer(object):
