@@ -69,14 +69,22 @@ class TranslatedFuncarg(CPythonFuncarg):
     @classmethod
     def make(cls):
         if cls.exe_wrapper is None:
-            from subprocess import check_call, call
-            check_call(['make', 'fundy-c'])
-            @staticmethod
-            def exe_wrapper(args):
-                exe_path = py.path.local('fundy-c').strpath
-                exe_and_args = [exe_path] + args
-                return check_call(exe_and_args)
-            cls.exe_wrapper = exe_wrapper
+            from subprocess import check_call, CalledProcessError
+            try:
+                check_call(['make', 'fundy-c'])
+            except CalledProcessError:
+                @staticmethod
+                def exe_wrapper(args):
+                    py.test.fail('make failed first time; not re-running')
+                cls.exe_wrapper = exe_wrapper
+                raise
+            else:
+                @staticmethod
+                def exe_wrapper(args):
+                    exe_path = py.path.local('fundy-c').strpath
+                    exe_and_args = [exe_path] + args
+                    return check_call(exe_and_args)
+                cls.exe_wrapper = exe_wrapper
 
 
     @classmethod

@@ -71,11 +71,12 @@ class Snippet(object):
         # The generator function we have to return
         def generator_func():
             if not no_cpython:
-                yield mark(test_cpython, xfail_cpython, xfail)
+                yield 'cpython', mark(test_cpython, xfail_cpython, xfail)
             if not no_rpython:
-                yield mark(test_rpython, xfail_rpython, xfail)
+                yield 'rpython', mark(test_rpython, xfail_rpython, xfail)
             if not no_translated:
-                yield mark(test_translated, xfail_translated, xfail)
+                yield 'translated', mark(test_translated, xfail_translated,
+                                         xfail)
 
         return generator_func
 
