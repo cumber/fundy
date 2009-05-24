@@ -12,7 +12,13 @@ TERM:       ";";
 BEGIN:      ":";
 
 
-program:    [TERM]* statement* [TERM]* [EOF] ;
+# NOTE: Have tried putting the required TERMs in here instead of at the end of
+# every concrete statement, but that causes statement to recognise "foo = 1"
+# as starting with an io_statement (a print with an elided "print" keyword),
+# that it commits to, and then treat the "=" as a parse error. With the TERM at
+# the end of print_statement, the z cannot be treated as a complete
+# print_statement, so parsing does backtrack to try assign_statement.
+program:    [TERM]* ( statement [TERM]* )* [EOF] ;
 
 statement:  <io_statement>
     |       <bind_statement>
@@ -63,16 +69,18 @@ term:   <IDENT>
     |   <MISSING>
     |   <literal>
     |   <paren>
-#    |   <typeswitch>
+    |   <typeswitch>
     ;
 
 paren:  "(" <expr> ")" ;
 
 chain:  term+;
 
-#typeswitch: ["typeswitch"] expr [":"] <switchcase>+ ;
+typeswitch: ["typeswitch"] expr >caseblock< ;
 
-switchcase: ["is"] expr ;
+caseblock: [BEGIN] switchcase+ ;
+
+switchcase: ["case"] expr ["return"] expr [TERM] ;
 
 literal:    <NUMBER>
     |       <list>

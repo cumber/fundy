@@ -133,3 +133,32 @@ print plus2 100
 '''
 102
 ''').make_tests()
+
+test_typeswitch = Snippet('''
+i = 3
+b = true
+u = unit
+c = '@'
+s = "foo"
+
+def gettype thing:
+    return typeswitch thing:
+        case int return "int"
+        case bool return "bool"
+        case unittype return "unit"
+        case char return "char"
+        case string return "string"
+
+print gettype i
+print gettype b
+print gettype u
+print gettype c
+print gettype s
+''',
+'''
+int
+bool
+unit
+char
+string
+''').make_tests()

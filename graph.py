@@ -51,14 +51,7 @@ class NodePtr(object):
         """
         Apply the pointed at node to argument, returning a new node.
         """
-        n = self.node
-        if isinstance(n, BuiltinNode):
-            return n.apply(argument_ptr)
-        elif isinstance(n, LambdaNode):
-            return n.apply(argument_ptr)
-        else:
-            raise TypeError
-
+        return n.apply(argument_ptr)
 
     def get_instantiated_node(self, replace_this_ptr, with_this_ptr):
         """
@@ -158,7 +151,7 @@ class Node(object):
     def add_type(self, typeptr):
         self.types.add(typeptr)
 
-    def repr(self, toplevel=True):
+    def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
@@ -340,7 +333,7 @@ class ApplicationNode(Node):
 ApplicationNode.add_instantiate_fn('functor', 'argument')
 ApplicationNode.add_dot_fn(dict(shape='ellipse', label='apply'),
                            functor=dict(color='red', label='f'),
-                           argument=dict(color='cyan', label='a'))
+                           argument=dict(color='purple', label='a'))
 
 class LambdaNode(Node):
     def __init__(self, parameter, body):
@@ -434,6 +427,47 @@ class BuiltinNode(Node):
                 yield dot
 
 
+class TypeswitchNode(Node):
+    def __init__(self, cases):
+        self.cases = cases
+
+    def apply(self, argument):
+        argument.reduce_WHNF_inplace()
+        for c in self.cases:
+            assert isinstance(c.node, ConsNode)
+            case_type = c.node.a
+            case_ret = c.node.b
+            case_type.reduce_WHNF_inplace()
+            if argument.node.types.contains(case_type):
+                return case_ret.node
+        raise TypeError("typeswitch found no match")
+
+    def instantiate(self, replace_this_ptr, with_this_ptr):
+        new_cases = []
+        for c in self.cases:
+            if c is replace_this_ptr:
+                new_cases.append(with_this_ptr)
+            else:
+                new_cases.append(c.get_instantiated_node_ptr(replace_this_ptr,
+                                                             with_this_ptr))
+        return TypeswitchNode(new_cases)
+
+    def dot(self, already_seen=None):
+        """
+        NOT_RPYTHON:
+        """
+        if already_seen is None:
+            already_seen = set()
+
+        if self not in already_seen:
+            yield dot_node(self.nodeid(), shape='octagon', label='typeswitch',
+                           color='cyan')
+            for case in self.cases:
+                yield dot_link(self.nodeid(), case.nodeid(), color='cyan')
+                for thing in case.dot(already_seen):
+                    yield thing
+
+
 class ValueNode(Node):
     """
     Base class for nodes containing values.
@@ -473,9 +507,9 @@ class ConsNode(ValueNode):
             return Cons(ConsNode.make_tree(left), ConsNode.make_tree(right))
 
 ConsNode.add_instantiate_fn('a', 'b')
-ConsNode.add_dot_fn(dict(shape='box', color='navy', label='cons'),
-                    a=dict(color='purple', label='a'),
-                    b=dict(color='purple', label='b'))
+ConsNode.add_dot_fn(dict(shape='box', color='maroon', label='cons'),
+                    a=dict(color='maroon', label='a'),
+                    b=dict(color='maroon', label='b'))
 
 
 class PrimitiveNode(ValueNode):
@@ -576,6 +610,12 @@ def Param():
     Helper function to make pointers to new parameter nodes
     """
     return NodePtr(ParameterNode())
+
+def Typeswitch(cases):
+    """
+    Helper function to make pointers to new typeswitch nodes.
+    """
+    return NodePtr(TypeswitchNode(cases))
 
 def Cons(a, b):
     """

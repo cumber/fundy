@@ -2,7 +2,8 @@
 from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
 from utils import dotview, LabelledGraph, preparer
-from graph import Application, BuiltinNode, Lambda, Param, Cons, ConsNode
+from graph import (Application, BuiltinNode, Lambda, Param, Cons, ConsNode,
+                   Typeswitch)
 from builtin import default_context, IntPtr, CharPtr, StrPtr, unit
 from pyops import ASSOC
 
@@ -134,6 +135,18 @@ class Eval(RPythonVisitor):
         for i in xrange(len(node.children) - 1):
             self.dispatch(node.children[i])
         return self.dispatch(node.children[-1])
+
+    def visit_typeswitch(self, node):
+        expr = self.dispatch(node.children[0])
+        cases = [self.dispatch(n) for n in node.children[1:]]
+        return Application(Typeswitch(cases), expr)
+
+    def visit_switchcase(self, node):
+        """
+        Return a Cons node of the case expression and the return expression.
+        """
+        case, ret = node.children
+        return Cons(self.dispatch(case), self.dispatch(ret))
 
     def visit_type_statement(self, node):
         ident = node.children[0]

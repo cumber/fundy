@@ -25,5 +25,5 @@ endif
 .PHONY: default
 default: fundy-c
 
-fundy-%: *.py
+fundy-%: *.py fundy.grammar
 	python $(PYPY_DIR)/pypy/translator/goal/translate.py $(OPT) $(BACKEND) $(BATCH) $(TRANSLATE_FLAGS) target_fundy
