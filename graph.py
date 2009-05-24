@@ -51,7 +51,7 @@ class NodePtr(object):
         """
         Apply the pointed at node to argument, returning a new node.
         """
-        return n.apply(argument_ptr)
+        return self.node.apply(argument_ptr)
 
     def get_instantiated_node(self, replace_this_ptr, with_this_ptr):
         """
