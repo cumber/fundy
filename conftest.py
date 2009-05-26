@@ -7,6 +7,8 @@ directory that has the conftest.py module, and running py.test from the test
 directory fails due to the base fundy directory not being in path).
 """
 
+import sys
+
 import py
 
 
@@ -33,28 +35,36 @@ class CPythonFuncarg(object):
         self.tempdir = pyfuncitem.config.mktemp(name, numbered=True)
 
     @staticmethod
-    def run(args):
+    def raw_run(args):
         from interactive import main
         return main(['<fundy-test>'] + args)
 
+    def run(self, args):
+        try:
+            return self.raw_run(args), None, None
+        except Exception, e:
+            return None, e, sys.exc_info()[2]
 
     def run_code(self, code):
         tmpfile = self.tempdir.join('tmp.fy')
         tmpfile.write(code)
 
         do_run = lambda: self.run([tmpfile.strpath])
-        ret, out, err = py.io.StdCaptureFD.call(do_run)
+        result, out, err = py.io.StdCaptureFD.call(do_run)
 
-        return ret, out, err
+        ret, exc, tb = result
+        return ret, out, err, exc, tb
 
 class RPythonFuncarg(CPythonFuncarg):
     @staticmethod
-    def run(args):
+    def raw_run(args):
         from interactive import main
         from utils import preparer
         preparer.prepare(for_translation=True)
-        ret = CPythonFuncarg.run(args)
-        preparer.prepare(for_translation=False)
+        try:
+            ret = CPythonFuncarg.raw_run(args)
+        finally:
+            preparer.prepare(for_translation=False)
         return ret
 
 class TranslatedFuncarg(CPythonFuncarg):
@@ -88,6 +98,6 @@ class TranslatedFuncarg(CPythonFuncarg):
 
 
     @classmethod
-    def run(cls, args):
+    def raw_run(cls, args):
         return cls.exe_wrapper(args)
 
