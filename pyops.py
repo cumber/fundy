@@ -43,8 +43,6 @@ class N_aryBuiltinMeta(type):
 
         not_nones = ' and '.join(argnames)
         frags.append('    if %s:' % not_nones)    # can apply func
-        for name in argnames:
-            frags.append('        %s.reduce_WHNF_inplace()' % name)
         args = ', '.join(argnames)
         frags.append('        return self.func(%s)' % args)
         frags.append('    else:')
@@ -64,7 +62,7 @@ class N_aryBuiltinMeta(type):
             frags.append('    else:')
             frags.append('        %s = None' % name)
 
-        frags.append('    if nochange:')
+        frags.append('    if nochange and replace_this_ptr is not None:')
         frags.append('        return self') # no need to make a new copy
         frags.append('    else:')
         frags.append('        return %s(self.func, %s)' % (classname, args))
@@ -113,9 +111,9 @@ class TypeTable(object):
         fundy_to_py = {}
         for fundyval, pythonval in values:
             py_to_fundy[pythonval] = fundyval.node
-            fundy_to_py[fundyval] = pythonval
+            fundy_to_py[fundyval.node] = pythonval
         self.boxfuncs[name] = lambda v: py_to_fundy[v]
-        self.extractfuncs[name] = lambda v: fundy_to_py[v]
+        self.extractfuncs[name] = lambda v: fundy_to_py[v.node]
         self.typecheckfuncs[name] = lambda v: v.node.types.contains(fundytype)
 
     def get_box_func(self, name):
@@ -196,6 +194,7 @@ class OpTable(object):
                 extract = _type_info.get_extract_func(_arg_types[0])
 
                 def wrapper(x):
+                    x.reduce_WHNF_inplace()
                     if argcheck(x):
                         raw_ret = func(extract(x))
                         ret = box(raw_ret)
@@ -216,6 +215,8 @@ class OpTable(object):
                                          _arg_types)
 
                 def wrapper(arg1, arg2):
+                    arg1.reduce_WHNF_inplace()
+                    arg2.reduce_WHNF_inplace()
                     if argcheck1(arg1) and argcheck2(arg2):
                         raw_ret = func(extract1(arg1), extract2(arg2))
                         ret = box(raw_ret)

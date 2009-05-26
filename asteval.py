@@ -3,7 +3,7 @@ from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
 from utils import dotview, LabelledGraph, preparer
 from graph import (Application, BuiltinNode, Lambda, Param, Cons, ConsNode,
-                   Typeswitch)
+                   Typeswitch, Y)
 from builtin import default_context, IntPtr, CharPtr, StrPtr, unit
 from pyops import ASSOC, FIXITY
 
@@ -204,8 +204,23 @@ class Eval(RPythonVisitor):
         # create a scope for the function's parameters and local variables
         local_scope = Eval(self.context)
 
+        # Here we assume that the definition may be recursive; use Y to make
+        # an equivalent non-recursive definition by factoring out the function
+        # to call recursively as an extra parameter, then binding the name
+        # being defined to that parameter in the local scope. If in fact that
+        # name is never dereferenced, then we waste a bit of work reducing the
+        # Y application, but it reduces to what the graph would've been if we
+        # didn't assume it was recursive after only one step (creates some
+        # extra garbage though).
+        recursion_marker = Param()
+        local_scope.context.bind(name, recursion_marker)
+
+        graph = local_scope.make_lambda_chain(params, block)
+
+        graph = Application(Y, Lambda(recursion_marker, graph))
+
         # bind the name in the original scope
-        self.context.bind(name, local_scope.make_lambda_chain(params, block))
+        self.context.bind(name, graph)
 
     def make_lambda_chain(self, params, body):
         # Helper for visit_assign_statement. Dispatches each of params in order,

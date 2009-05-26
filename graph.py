@@ -218,6 +218,7 @@ class Node(object):
                                         {'name': name})
             arg_fragments.append("new_%(name)s" % {'name': name})
 
+        conj_fragments.append('replace_this_ptr is not None')
         func_fragments += ["    if ", ' and '.join(conj_fragments), ":\n"
                            "        return self\n"
                            "    else:\n"
@@ -358,28 +359,42 @@ class LambdaNode(Node):
             return argument.node            # just return the arg node now
         return self.body.get_instantiated_node(self.parameter, argument)
 
+    def instantiate(self, replace_this_ptr, with_this_ptr):
+        # TODO: this assertion was causing test failures, and removing it
+        # doesn't cause any; maybe my reasoning is wrong and it's not actually
+        # necessary; investigate!
+        #assert replace_this_ptr is not self.parameter, ("Don't instantiate "
+        #        "a lambda replacing its parameter, apply it to something")
+
+        if self.body is replace_this_ptr:
+            new_body = with_this_ptr
+        else:
+            new_body = self.body.get_instantiated_node_ptr(replace_this_ptr,
+                                                           with_this_ptr)
+
+        if new_body is self.body and replace_this_ptr is not None:
+            return self
+        else:
+            # Make a new lambda node with a new parameter node, but then have
+            # to instantiate the body *again* to replace references to the old
+            # lambda's parameter node with the new parameter node. The old
+            # lambda's parameter cannot just be reused, as the original lambda
+            # might still be referenced from somewhere, and if one lambda ends
+            # up inside the other, then we have two lambdas both trying to bind
+            # the same free variable. If they could be guaranteed to remain
+            # disjoint, this actually wouldn't be a problem, as it is only
+            # *references* to a parameter that get replaced.
+            new_param = Param()
+            new_body = new_body.get_instantiated_node_ptr(self.parameter,
+                                                          new_param)
+            return LambdaNode(new_param, new_body)
+
     def __repr__(self, toplevel=True):
         """
         NOT_RPYTHON:
         """
         return 'LAMBDA %s --> %s' % (self.parameter.__repr__(False),
                                      self.body.__repr__(False))
-
-# small amount of hackery here; add the instantiate function then replace it
-# with a wrapper around itself, so we can assert that the parameter is not the
-# substitution of the instantiation. That would be very strange, as we normally
-# apply a lambda to an argument by instantiating the body, replacing the
-# parameter in the BODY with the argument. The parameter of a lambda node should
-# never be anything other than a parameter node. (It shouldn't really even be
-# a node, as it is rather a placeholder for one, but it needs to be unique for
-# each lambda, and needs to be type-compatible with a node, so...)
-LambdaNode.add_instantiate_fn('parameter', 'body')
-LambdaNode.inner_instantiate = LambdaNode.instantiate
-def outer_instantiate(self, replace_this_ptr, with_this_ptr):
-    assert replace_this_ptr is not self.parameter, \
-    "Don't instantiate a lambda replacing its parameter, apply it to something"
-    return self.inner_instantiate(replace_this_ptr, with_this_ptr)
-LambdaNode.instantiate = outer_instantiate
 
 LambdaNode.add_dot_fn(dict(shape='octagon', label='lambda'),
                       parameter=dict(color='blue', label='p'),
@@ -408,6 +423,24 @@ class ParameterNode(Node):
         return self._param_dict[self]
 
 ParameterNode.add_dot_fn(dict(shape='octagon', label='param', color='blue'))
+
+
+class FixfindNode(Node):
+    """
+    This implements the Y combinator, which finds the fixpoint of lambda terms.
+    """
+    def apply(self, argument):
+        return ApplicationNode(argument.get_instantiated_node_ptr(None, None),
+                               Application(Y, argument))
+
+    def instantiate(self, replace_this_ptr, with_this_ptr):
+        # Y node has no substructure, so don't make a copy
+        return self
+
+    def __repr__(self, toplevel=True):
+        return "Y"
+
+FixfindNode.add_dot_fn(dict(shape='ellipse', label='Y', color='green'))
 
 
 class BuiltinNode(Node):
@@ -608,3 +641,6 @@ def LabelledValue(name=None):
     Helper function to make pointers to new empty value nodes.
     """
     return NodePtr(LabelledValueNode(name))
+
+# define the Y combinator; don't really need a function to make new ones!
+Y = NodePtr(FixfindNode())

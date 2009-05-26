@@ -263,3 +263,19 @@ print if (true and false)
 yes
 no
 ''').make_tests()
+
+# Test recursion
+fac_args = [0, 1, 2, 4, 8, 16]
+
+def fac(n):
+    if n == 0:
+        return 1
+    else:
+        return n * fac(n - 1)
+
+test_fac = Snippet('''
+fac n = if (0 == n)
+           1
+           (n * (fac (n - 1)))
+''' + '\n'.join(['fac %d' % i for i in fac_args]),
+'\n'.join([str(fac(i)) for i in fac_args])).make_tests()
