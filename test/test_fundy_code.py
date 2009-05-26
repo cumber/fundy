@@ -249,3 +249,17 @@ print by10 1 == inc (inc (inc 7))
 true
 true
 ''').make_tests()
+
+# Test if statement
+test_if = Snippet('''
+eq3 = ==3
+print if (eq3 ((7 * 4 + 2) / 10))
+    "yes"
+    "no"
+print if (true and false)
+    "yes"
+    "no"
+''', '''
+yes
+no
+''').make_tests()

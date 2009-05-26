@@ -13,82 +13,87 @@ FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
 from context import Context, OperatorRecord, SimpleRecord
 
 
-class UnaryBuiltinNode(BuiltinNode):
-    def __init__(self, func, arg=None):
-        BuiltinNode.__init__(self)
-        self.func = func
-
-    def apply(self, argument):
-        argument.reduce_WHNF_inplace()
-        return self.func(argument)
-
-    def instantiate(self, replace_this_ptr, with_this_ptr):
-        return self
-
-
-class BinaryBuiltinNode(BuiltinNode):
-    def __init__(self, func, arg1=None, arg2=None):
-        BuiltinNode.__init__(self)
-        self.func = func
-        self.arg1 = arg1
-        self.arg2 = arg2
-
-    def apply(self, argument):
-        if not self.arg1:
-            arg1 = argument
-            arg2 = self.arg2
-        elif not self.arg2:
-            arg1 = self.arg1
-            arg2 = argument
-        else:
-            assert False    # should be impossible
-
-        if arg1 and arg2:
-            # have enough arguments to apply the builtin, reduce them
-            # to make sure they are value nodes, then call self.func
-            arg1.reduce_WHNF_inplace()
-            arg2.reduce_WHNF_inplace()
-            return self.func(arg1, arg2)
-        else:
-            return BinaryBuiltinNode(self.func, arg1, arg2)
-
-    def instantiate(self, replace_this_ptr, with_this_ptr):
-        if self.arg1:
-            arg1 = self.arg1.get_instantiated_node_ptr(replace_this_ptr,
-                                                       with_this_ptr)
-        else:
-            arg1 = None
-        if self.arg2:
-            arg2 = self.arg2.get_instantiated_node_ptr(replace_this_ptr,
-                                                       with_this_ptr)
-        else:
-            arg2 = None
-
-        if arg1 is self.arg1 and arg2 is self.arg2:
-            return self     # no need to make a new copy
-        else:
-            return BinaryBuiltinNode(self.func, arg1, arg2)
-
-    def dot(self, already_seen=None):
+class N_aryBuiltinMeta(type):
+    def __new__(metacls, classname, bases, dic):
         """
         NOT_RPYTHON:
         """
-        for dot in super(BinaryBuiltinNode, self).dot(already_seen):
-            yield dot
+        argnames = ['arg%d' % i for i in range(dic['N'])]
 
-        if self.arg1:
-            for dot in self.arg1.dot():
-                yield dot
-            yield dot_link(self.nodeid(), self.arg1.nodeid(),
-                           color='blue', label='1')
+        frags = []
+        arg_defaults = ', '.join(['%s=None' % name for name in argnames])
+        frags.append('def __init__(self, func, %s):' % arg_defaults)
+        frags.append('    BuiltinNode.__init__(self)')
+        frags.append('    self.func = func')
+        for name in argnames:
+            frags.append('    self.%s = %s' % (name, name))
+        exec '\n'.join(frags)
+        dic['__init__'] = __init__
 
-        if self.arg2:
-            for dot in self.arg2.dot():
-                yield dot
-            yield dot_link(self.nodeid(), self.arg2.nodeid(),
-                           color='blue', label='2')
+        frags = []
+        frags.append('def apply(self, argument):')
+        frags.append('    applied = False')
+        for name in argnames:
+            frags.append('    if not applied and not self.%s:' % name)
+            frags.append('        %s = argument' % name)
+            frags.append('        applied = True')
+            frags.append('    else:')
+            frags.append('        %s = self.%s' % (name, name))
+        frags.append('    assert applied')
 
-# end class BinaryBuiltinNode
+        not_nones = ' and '.join(argnames)
+        frags.append('    if %s:' % not_nones)    # can apply func
+        for name in argnames:
+            frags.append('        %s.reduce_WHNF_inplace()' % name)
+        args = ', '.join(argnames)
+        frags.append('        return self.func(%s)' % args)
+        frags.append('    else:')
+        frags.append('        return %s(self.func, %s)' % (classname,
+                                                                     args))
+        exec '\n'.join(frags)
+        dic['apply'] = apply
+
+        frags = []
+        frags.append('def instantiate(self, replace_this_ptr, with_this_ptr):')
+        frags.append('    nochange = True')
+        for name in argnames:
+            frags.append('    if self.%s:' % name)
+            frags.append('        %s = self.%s.get_instantiated_node_ptr('
+                           'replace_this_ptr, with_this_ptr)' % (name, name))
+            frags.append('        nochange = %s is self.%s' % (name, name))
+            frags.append('    else:')
+            frags.append('        %s = None' % name)
+
+        frags.append('    if nochange:')
+        frags.append('        return self') # no need to make a new copy
+        frags.append('    else:')
+        frags.append('        return %s(self.func, %s)' % (classname, args))
+        exec '\n'.join(frags)
+        dic['instantiate'] = instantiate
+
+        dic['get_name'] = lambda self: self.func.func_name
+        cls = type(classname, bases, dic)
+
+        arg_links = {}
+        for name in argnames:
+            arg_links[name] = dict(color='blue', style='dotted', label=name)
+        cls.add_dot_fn(dict(shape='ellipse', color='green',
+                            label=lambda self: self.func.func_name),
+                       **arg_links)
+
+        return cls
+
+class UnaryBuiltinNode(BuiltinNode):
+    __metaclass__ = N_aryBuiltinMeta
+    N = 1
+
+class BinaryBuiltinNode(BuiltinNode):
+    __metaclass__ = N_aryBuiltinMeta
+    N = 2
+
+class TernaryBuiltinNode(BuiltinNode):
+    __metaclass__ = N_aryBuiltinMeta
+    N = 3
 
 class TypeTable(object):
     def __init__(self):
@@ -284,15 +289,15 @@ def plus(x, y):
     return x + y
 
 @ops.op(name='-', arg_types='int', prec=1000)
-def plus(x, y):
+def minus(x, y):
     return x - y
 
 @ops.op(name='*', arg_types='int', prec=2000)
-def plus(x, y):
+def mul(x, y):
     return x * y
 
 @ops.op(name='/', arg_types='int', prec=2000)
-def plus(x, y):
+def div(x, y):
     return x // y
 
 @ops.op(arg_types='int', prec=3000)
@@ -334,9 +339,21 @@ def eq(left, right):
         raise TypeError("Can't compare non-value types for equality")
 
 _box_bool = _type_info.get_box_func('bool')
-def eq_wrapper(left, right):
+def boxed_eq(left, right):
     return _box_bool(eq(left, right))
-eq_wrapper.func_name = '=='
+boxed_eq.func_name = '=='
 
-eq_ptr = NodePtr(BinaryBuiltinNode(eq_wrapper))
+eq_ptr = NodePtr(BinaryBuiltinNode(boxed_eq))
 pyops_context.bind_operator('==', eq_ptr, ASSOC.LEFT, 250, FIXITY.INFIX)
+
+
+def if_then_else(cond, then_part, else_part):
+    if eq(cond, bool_true):
+        return then_part.node
+    else:
+        return else_part.node
+
+if_then_else.func_name = 'if'
+
+if_ptr = NodePtr(TernaryBuiltinNode(if_then_else))
+pyops_context.bind('if', if_ptr)
