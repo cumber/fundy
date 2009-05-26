@@ -1,21 +1,34 @@
 
 from pypy.rlib.objectmodel import CDefinedIntSymbolic, r_dict
 
+# XXX: Had to stop using the following definition for EnumVal, as the
+# translation process was producing errors about trying to hash a Symbolic.
+# I think it was trying to optimise an if/elif/else chain using a hashmap.
+#
+#class EnumVal(CDefinedIntSymbolic):
+#    """
+#    Instances behave as CDefinedIntSymbolic, but have a symbolic name
+#    representation useful when debugging on top of CPython
+#    """
+#    def __init__(self, name, expr):
+#        CDefinedIntSymbolic.__init__(self, expr)
+#        self.name = name
+#
+#    def __str__(self):
+#        return self.name
+#
+#    def __repr__(self):
+#        return 'EnumVal(%r, %d)' % (self.name, self.expr)
 
-class EnumVal(CDefinedIntSymbolic):
-    """
-    Instances behave as CDefinedIntSymbolic, but have a symbolic name
-    representation useful when debugging on top of CPython
-    """
-    def __init__(self, name, expr):
-        CDefinedIntSymbolic.__init__(self, expr)
+class EnumVal(object):
+    def __init__(self, name):
         self.name = name
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
-        return 'EnumVal(%r, %d)' % (self.name, self.expr)
+        return 'EnumVal(%r)' % self.name
 
 
 class Enum(object):
@@ -23,10 +36,8 @@ class Enum(object):
     Instances have a set of EnumVals
     """
     def __init__(self, *symbols):
-        i = 0
         for s in symbols:
-            setattr(self, s, EnumVal(s, i))
-            i += 1
+            setattr(self, s, EnumVal(s))
 
     def __repr__(self):
         return 'Enum(%s)' %  \

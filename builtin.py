@@ -88,7 +88,7 @@ class CharNode(PrimitiveNode):
         return lambda c: getattr(c, 'charval')
 
     def to_repr(self):
-        return repr(self.strval)
+        return repr(self.charval)
 
 class StringNode(PrimitiveNode):
     def __init__(self, value):

@@ -5,7 +5,107 @@ from utils import dotview, LabelledGraph, preparer
 from graph import (Application, BuiltinNode, Lambda, Param, Cons, ConsNode,
                    Typeswitch)
 from builtin import default_context, IntPtr, CharPtr, StrPtr, unit
-from pyops import ASSOC
+from pyops import ASSOC, FIXITY
+
+
+class Expression(object):
+    """
+    Temporarily used to represent an expression object. Since operators can be
+    added (or removed) at runtime, the parser cannot fully resolve expressions
+    to an abstract syntax tree. Instead, the parser returns a tree representing
+    expressions as elements chained together, where each element is something
+    the front end of the parser does understand directly (including nested
+    expressions in parentheses). It is the responisibility of this class to
+    convert a chain of these expression elements into the appropriate graph
+    structure, taking into account operator associativity and precedence.
+
+    NOTE: the algorithm used here is "top down operator precedence" as described
+    at http://effbot.org/zone/simple-top-down-parsing.htm, but heavily modified
+    to account for the fact that every "token" can be considered an operator.
+    """
+    def __init__(self, eval, nodes):
+        self.eval = eval
+        self.elements = list(nodes)
+
+    def __repr__(self):
+        """
+        NOT_RPYTHON:
+        """
+        return 'Expression(<Eval>, %r)' % self.elements
+
+    def end(self):
+        return not self.elements
+
+    def peek(self):
+        return self.elements[0]
+
+    def advance(self):
+        return self.elements.pop(0)
+
+    def resolve(self, rbp=0):
+        if self.end():
+            return None
+
+        tmp = self.advance()
+        left = self.nud(tmp)
+
+        while not self.end() and rbp < self.lbp(self.peek()):
+            tmp = self.advance()
+            left = self.led(tmp, left)
+
+        return left
+
+    def nud(self, node):
+        return self.eval.dispatch(node)
+
+    def led(self, node, left):
+        # When we call here, we need to check what kind of operator node is.
+        # If infix, then we apply it to left (given) and right (call resolve
+        # recursively to get it).
+        # If postfix, we apply it to left and return without evaluation right
+        # (that will be done at a higher level).
+        # If prefix (remember that everything is a prefix operator unless
+        # explicitly declared otherwise), we apply left to it and return that.
+
+        rbp, assoc, fix = self.get_binding_power_assoc_fixity(node)
+        # pass a value less than our binding power to the recursive call
+        # to get right associativity
+        if assoc is ASSOC.RIGHT:
+            rbp = rbp -1
+
+
+        this = self.eval.dispatch(node)
+        if fix is FIXITY.PREFIX:
+            applied = Application(left, this)
+        elif fix is FIXITY.POSTFIX:
+            applied = Application(this, left)
+        else:   # infix
+            right = self.resolve(rbp)
+            if right is None:
+                applied = Application(this, left)
+            else:
+                applied = Application(Application(this, left), right)
+
+        return applied
+
+    def get_binding_power_assoc_fixity(self, node):
+        if node.symbol == 'IDENT':
+            assert isinstance(node, Symbol)
+            name = node.additional_info
+            if self.eval.context.is_operator(name):
+                prec = self.eval.context.get_prec(name)
+                assoc = self.eval.context.get_assoc(name)
+                fixity = self.eval.context.get_fixity(name)
+                return prec, assoc, fixity
+
+        # Default precedence and associativity for function application, since
+        # every term that is not explicitly a name for an operator is parsed
+        # as if it were an ordinary function.
+        return 10000, ASSOC.LEFT, FIXITY.PREFIX
+
+    def lbp(self, node):
+        lbp, _, _ = self.get_binding_power_assoc_fixity(node)
+        return lbp
 
 
 class Eval(RPythonVisitor):
@@ -85,7 +185,7 @@ class Eval(RPythonVisitor):
         else:
             cls.__hack__real_visit_show_statement = cls.__secret_backup
 
-    __secret_backup = visit_show_statement
+    __secret_backup = __hack__real_visit_show_statement
 
 
     def visit_assign_statement(self, node):
@@ -189,59 +289,7 @@ class Eval(RPythonVisitor):
         return constructor
 
     def visit_expr(self, node):
-        graph_stack = []
-        oper_stack = []
-
-        for n in node.children:
-            # function symbol
-            if n.symbol == 'IDENT':
-                assert isinstance(n, Symbol)
-                n_graph = self.dispatch(n)
-                name = n.additional_info
-                if not self.context.is_operator(name):
-                    graph_stack.append(n_graph)
-                else:
-                    n_assoc = self.context.get_assoc(name)
-                    n_prec = self.context.get_prec(name)
-                    n_fix = self.context.get_fixity(name)
-                    while True:
-                        if not oper_stack:
-                            break;
-                        o_graph, o_assoc, o_prec, o_fix = oper_stack[-1]
-                        if (n_prec < o_prec or
-                                (n_assoc is ASSOC.LEFT and n_prec == o_prec)
-                            ):
-                            # already have oper, but remove from stack
-                            oper_stack.pop()
-                            arg2 = graph_stack.pop()
-                            arg1 = graph_stack.pop()
-                            apply_to_arg1 = Application(o_graph, arg1)
-                            apply_to_arg2 = Application(apply_to_arg1, arg2)
-                            graph_stack.append(apply_to_arg2)
-                        else:
-                            break
-                    oper_stack.append((n_graph, n_assoc, n_prec, n_fix))
-            else:
-                graph_stack.append(self.dispatch(n))
-
-        # finished looking at the chain, give arguments to any operators
-        # left on the operator stack
-        while oper_stack:
-            oper, _assoc, _prec, _fix = oper_stack.pop()
-            arg2 = graph_stack.pop()
-            arg1 = graph_stack.pop()
-            apply_to_arg1 = Application(oper, arg1)
-            apply_to_arg2 = Application(apply_to_arg1, arg2)
-            graph_stack.append(apply_to_arg2)
-
-        # now any expressions involving binary operators should have been
-        # replaced by single graphs applying the operator to its arguments
-        # the remaining chain is presumed to be function calls
-        f = graph_stack[0]
-        for i in xrange(1, len(graph_stack)):
-            f = Application(functor=f, argument=graph_stack[i])
-        return f
-    # end def visit_expr
+        return Expression(self, node.children).resolve()
 
     def visit_IDENT(self, node):
         # lookup the identifier in the context and return its graph

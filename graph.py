@@ -452,6 +452,15 @@ class TypeswitchNode(Node):
                                                              with_this_ptr))
         return TypeswitchNode(new_cases)
 
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        cases = ["case %s return %s" % (c.node.a.__repr__(toplevel),
+                                        c.node.b.__repr__(toplevel))
+                 for c in self.cases]
+        return "typeswitch: [%s]" % ', '.join(cases)
+
     def dot(self, already_seen=None):
         """
         NOT_RPYTHON:
@@ -487,6 +496,11 @@ class ConsNode(ValueNode):
     def to_string(self):
         return self.a.node.to_string() + " . " + self.b.node.to_string()
 
+    def __repr__(self, toplevel=True):
+        """
+        NOT_RPYTHON:
+        """
+        return '% . %' % (self.a.__repr__(toplevel), self.b.__repr__(toplevel))
 
     @staticmethod
     def make_tree(leaves):

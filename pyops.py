@@ -256,31 +256,31 @@ class OpTable(object):
 
 ops = OpTable()
 
-@ops.op(name='+', arg_types='int', prec=0)
+@ops.op(name='+', arg_types='int', prec=1000)
 def plus(x, y):
     return x + y
 
-@ops.op(name='-', arg_types='int', prec=0)
+@ops.op(name='-', arg_types='int', prec=1000)
 def plus(x, y):
     return x - y
 
-@ops.op(name='*', arg_types='int', prec=10)
+@ops.op(name='*', arg_types='int', prec=2000)
 def plus(x, y):
     return x * y
 
-@ops.op(name='/', arg_types='int', prec=10)
+@ops.op(name='/', arg_types='int', prec=2000)
 def plus(x, y):
     return x // y
 
-@ops.op(arg_types='int', prec=20)
+@ops.op(arg_types='int', prec=3000)
 def neg(x):
     return -1 * x
 
-@ops.op(name='and', arg_types='bool', prec=-10)
+@ops.op(name='and', arg_types='bool', prec=500)
 def bool_and(x, y):
     return x and y
 
-@ops.op(name='or', arg_types='bool', prec=-10)
+@ops.op(name='or', arg_types='bool', prec=500)
 def bool_or(x, y):
     return x or y
 
