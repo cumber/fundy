@@ -209,3 +209,43 @@ inc = (+1)
 z = 8 + inc 2 - 21 * inc 3
 print z
 ''', '-73').make_tests()
+
+# Exercises the equality operator. Only positive testing.
+test_eq = Snippet('''
+print 1 == 1
+print 1 == 11
+
+print 'g' == 'g'
+print '%' == '9'
+
+print "foo" == "foo"
+print "bar" == "foo"
+
+print unit == unit
+
+print true == true
+print true == false
+''', '''
+true
+false
+true
+false
+true
+false
+true
+true
+false
+''').make_tests()
+
+# Test that the equality operator will consider equal expressions that will
+# only reduce to the same value, but are not already the same value node.
+test_eq_complex = Snippet('''
+inc = +1
+by10 = *10
+
+print 101 == inc (by10 10)
+print by10 1 == inc (inc (inc 7))
+''', '''
+true
+true
+''').make_tests()

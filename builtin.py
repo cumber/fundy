@@ -51,6 +51,9 @@ class IntNode(PrimitiveNode):
     def get_int(self):
         return self.intval
 
+    def eq(self, other):
+        return self.intval == other.intval
+
     @staticmethod
     def get_type():
         return int_type
@@ -76,6 +79,9 @@ class CharNode(PrimitiveNode):
 
     get_char = to_string
 
+    def eq(self, other):
+        return self.charval == other.charval
+
     @staticmethod
     def get_type():
         return char_type
@@ -100,6 +106,9 @@ class StringNode(PrimitiveNode):
         return self.strval
 
     get_string = to_string
+
+    def eq(self, other):
+        return self.strval == other.strval
 
     @staticmethod
     def get_type():

@@ -533,6 +533,9 @@ class PrimitiveNode(ValueNode):
     def instantiate(self, replace_this_ptr, with_this_ptr):
         return self
 
+    def eq(self, other):
+        raise NotImplementedError
+
     def __repr__(self, toplevel=True):
         return 'VALUE %s' % self.to_repr()
 
@@ -569,6 +572,9 @@ class LabelledValueNode(PrimitiveNode):
             return "<void>"
 
     to_repr = to_string
+
+    def eq(self, other):
+        return self.name == other.name
 
 
 def Application(functor, argument):

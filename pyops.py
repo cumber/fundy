@@ -2,7 +2,7 @@
 This module defines builtin Fundy functions that are defined using Python code.
 """
 
-from graph import BuiltinNode, NodePtr
+from graph import BuiltinNode, PrimitiveNode, ConsNode, NodePtr
 from utils import Enum, dot_node, dot_link
 from builtin import IntNode, CharNode, StringNode, unit_type, unit, \
                     bool_type, bool_false, bool_true
@@ -10,7 +10,7 @@ from builtin import IntNode, CharNode, StringNode, unit_type, unit, \
 ASSOC = Enum('LEFT', 'RIGHT', 'NONE')
 FIXITY = Enum('PREFIX', 'INFIX', 'POSTFIX')
 
-from context import Context, OperatorRecord
+from context import Context, OperatorRecord, SimpleRecord
 
 
 class UnaryBuiltinNode(BuiltinNode):
@@ -126,7 +126,7 @@ _type_info = TypeTable()
 _type_info.add_simple_type('int', IntNode)
 _type_info.add_simple_type('char', CharNode)
 _type_info.add_simple_type('string', StringNode)
-_type_info.add_enum_type('unit', unit_type, (unit, None))
+_type_info.add_enum_type('unit', unit_type, (unit, 0))
 _type_info.add_enum_type('bool', bool_type,
                          (bool_true, True), (bool_false, False))
 
@@ -136,8 +136,13 @@ class OpTable(object):
     """
     NOT_RPYTHON:
     """
+
+    # TODO: this class is now being used more as a "primitive function definer"
+    # than as an operator table. Should at least rename it. Probably needs some
+    # refactoring as well, to make more of its functionality reuseable.
     def __init__(self):
         self._db = {}
+
 
     def op(self, name=None, arg_types=None, ret_type=None,
            assoc=None, prec=None, fixity=None):
@@ -232,7 +237,10 @@ class OpTable(object):
             else:
                 _prec = prec
 
-            self.register_name(_name, ptr, _assoc, _prec, _fixity)
+            if fixity is None and assoc is None and prec is None:
+                self.register_func(_name, ptr)
+            else:
+                self.register_op(_name, ptr, _assoc, _prec, _fixity)
 
             return ptr
         # end def decorator
@@ -240,7 +248,19 @@ class OpTable(object):
         return decorator
     # end def OpTable.op
 
-    def register_name(self, name, graph, assoc, prec, fixity):
+    def func(self, name=None, arg_types=None, ret_type=None):
+        """
+        NOT_RPYTHON: Defines a primitive function rather than an operator.
+        """
+        return self.op(name, arg_types, ret_type, None, None, None)
+
+    def register_func(self, name, graph):
+        record = SimpleRecord(graph)
+        if not name in self._db:
+            self._db[name] = set()
+        self._db[name].add(record)
+
+    def register_op(self, name, graph, assoc, prec, fixity):
         record = OperatorRecord(graph, assoc, prec, fixity)
         if not name in self._db:
             self._db[name] = set()
@@ -250,7 +270,10 @@ class OpTable(object):
         c = Context()
         for name, recordset in self._db.items():
             for r in recordset:
-                c.bind_operator(name, r.graph, r.assoc, r.prec, r.fixity)
+                if hasattr(r, 'fixity'):
+                    c.bind_operator(name, r.graph, r.assoc, r.prec, r.fixity)
+                else:
+                    c.bind(name, r.graph)
         return c
 
 
@@ -285,4 +308,35 @@ def bool_or(x, y):
     return x or y
 
 
+# Define the context!
 pyops_context = ops.make_context()
+
+
+# Following some handcrafted functions are written. These need to take graph
+# pointers as arguments, and so cannot be automatically wrapped like the
+# builtin in operations above.
+
+def eq(left, right):
+    if left.node is right.node:
+        return True
+
+    left.reduce_WHNF_inplace()
+    right.reduce_WHNF_inplace()
+
+    if not isinstance(right.node, type(left.node)):
+        raise TypeError("cannot compare values of different types for equality")
+
+    if isinstance(left.node, PrimitiveNode):
+        return left.node.eq(right.node)
+    elif isinstance(left.node, ConsNode):
+        return eq(left.node.a, right.node.a) and eq(left.node.b, right.node.b)
+    else:
+        raise TypeError("Can't compare non-value types for equality")
+
+_box_bool = _type_info.get_box_func('bool')
+def eq_wrapper(left, right):
+    return _box_bool(eq(left, right))
+eq_wrapper.func_name = '=='
+
+eq_ptr = NodePtr(BinaryBuiltinNode(eq_wrapper))
+pyops_context.bind_operator('==', eq_ptr, ASSOC.LEFT, 250, FIXITY.INFIX)
