@@ -1,9 +1,9 @@
 
-# ignore whitespace or continuation
-IGNORE:     "[ \t]+|\\\n";
+# ignore whitespace or continuation or #comment
+IGNORE:     "[ \t]+|\\\n|(#[^\n]*)";
 
 NUMBER:     "[0-9]+";
-IDENT:      "([a-zA-Z_][a-zA-Z_0-9]*)|([+\-*/=!@$%\^&\|]+)";
+IDENT:      "([a-zA-Z_][a-zA-Z_0-9]*)|([.+\-*/=!@$%\^&\|]+)";
 STRING:     "\"([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}'\;:,.<>/\?`~]|\\\"|\\n|\\t|\\b|\\v|\\0|\\\\)*\"";
 CHAR:       "'([ a-zA-Z0-9!@\#$%\^&*\(\)\-=_+\|\[\]\{\}\"\;:,.<>/\?`~]|\\'|\\n|\\t|\\b|\\v|\\0|\\\\)'";
 LINEBREAK:  "\n[ \t\n]*";
@@ -53,10 +53,8 @@ param:              IDENT ;
 
 block:              [BEGIN] bind_statement* ["return"] expr [TERM] ;
 
-type_decl:          ["::"] "type" ;
 
-
-type_statement:     ["type"] IDENT ["="] >constructor_list< [TERM] ;
+type_statement:     ["data"] IDENT ["="] >constructor_list< [TERM] ;
 
 constructor_list:   constructor ( ["|"] constructor )* ;
 
