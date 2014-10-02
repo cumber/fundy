@@ -20,9 +20,9 @@
 import py
 import sys
 
-from pypy.rlib.parsing.ebnfparse import parse_ebnf, check_for_missing_names
-from pypy.rlib.parsing.parsing import PackratParser, ParseError
-from pypy.rlib.parsing.lexer import Lexer, Token, SourcePos
+from rpython.rlib.parsing.ebnfparse import parse_ebnf, check_for_missing_names
+from rpython.rlib.parsing.parsing import PackratParser, ParseError
+from rpython.rlib.parsing.lexer import Lexer, Token, SourcePos
 
 from utils import preparer
 
@@ -36,7 +36,7 @@ def get_grammar(for_translation):
     for translating the Fundy interpreter to low level code, or False for
     running on top of CPython.
     """
-    grammarfile = py.magic.autopath().dirpath().join('fundy.grammar')
+    grammarfile = py.path.local().join('fundy.grammar')
     lines = []
     skipdepth = 0
     for line in grammarfile.readlines():
