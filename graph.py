@@ -46,8 +46,9 @@ class NodePtr(object):
     def eq(self, other):
         return self.node is other.node
 
+    # FIXME: Cannot use ``hash()`` in RPython.
     def hash(self):
-        return hash(self.node)
+        return 0
 
     def add_type(self, typeptr):
         self.node.add_type(typeptr)

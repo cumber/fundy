@@ -19,9 +19,9 @@
 
 import sys
 
-from pypy.rlib.parsing.parsing import ParseError
-from pypy.rlib.parsing.deterministic import LexerError
-from pypy.rlib.streamio import open_file_as_stream, fdopen_as_stream
+from rpython.rlib.parsing.parsing import ParseError
+from rpython.rlib.parsing.deterministic import LexerError
+from rpython.rlib.streamio import open_file_as_stream, fdopen_as_stream
 
 from asteval import Eval
 from fundyparse import parse

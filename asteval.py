@@ -17,7 +17,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-from pypy.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
+from rpython.rlib.parsing.tree import RPythonVisitor, Symbol, Nonterminal
 
 from utils import dotview, LabelledGraph, preparer
 from graph import (Application, BuiltinNode, Lambda, Param, Cons, ConsNode,

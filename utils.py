@@ -17,7 +17,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-from pypy.rlib.objectmodel import CDefinedIntSymbolic, r_dict
+from rpython.rlib.objectmodel import CDefinedIntSymbolic, r_dict
 
 # XXX: Had to stop using the following definition for EnumVal, as the
 # translation process was producing errors about trying to hash a Symbolic.
